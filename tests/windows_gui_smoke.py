@@ -194,6 +194,31 @@ def main():
             assert "USDC" in distribuicao["distribuicao"]
             print("GUI_FIN04_SALDOS_SEPARADOS=PASS")
             print("GUI_FIN04_PATRIMONIO_USDC_0_965=2623 USDT")
+            # Falha parcial da Binance deve recalcular a tela — jamais
+            # reter um valor anterior como atual ou interromper o callback.
+            from unittest.mock import patch
+            chamadas_refresh = []
+            original_refresh = app._atualizar_abas_seguro
+            original_preco = app.price_manager.atualizar_precos
+            app._atualizar_abas_seguro = (
+                lambda precos_completos=True: chamadas_refresh.append(precos_completos)
+            )
+            app.price_manager.atualizar_precos = lambda moedas: False
+
+            class ThreadDireta:
+                def __init__(self, target, daemon=False):
+                    self.target = target
+                def start(self):
+                    self.target()
+
+            with patch.object(entry["threading"], "Thread", ThreadDireta):
+                app.atualizar_todas_as_analises()
+            root.update_idletasks()
+            root.update()
+            assert False in chamadas_refresh, chamadas_refresh
+            app._atualizar_abas_seguro = original_refresh
+            app.price_manager.atualizar_precos = original_preco
+            print("GUI_FIN04_FALHA_COTACAO_RECALCULA=PASS")
             print("GUI_FIN02_SEM_COTACAO=PASS")
             print("GUI_FIN02_RECUPERACAO=PASS")
             print("GUI_INTEGRADA=PASS")
