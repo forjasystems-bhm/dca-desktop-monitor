@@ -15,7 +15,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   portable-preview:
@@ -44,17 +44,6 @@ jobs:
           path: docs/front-screenshots/
           if-no-files-found: error
           retention-days: 30
-      - name: Publish screenshot files to development branch
-        if: github.event_name == 'pull_request' && github.event.pull_request.head.ref == 'feat/fin05-explicit-usdt-trading-fees' && github.event.pull_request.head.repo.full_name == github.repository
-        shell: pwsh
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -- docs/front-screenshots/
-          if (!(git diff --cached --quiet)) {
-            git commit -m "docs(front): real Windows application screenshots with fictional data [skip ci]"
-            git push origin "HEAD:refs/heads/feat/fin05-explicit-usdt-trading-fees"
-          }
       - name: Build portable Windows preview
         shell: pwsh
         run: |
