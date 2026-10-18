@@ -32,9 +32,13 @@ def patrimonio_historico_na_data(
         armazem.listar_posicoes_externas()
         if hasattr(armazem, "listar_posicoes_externas") else []
     )
+    movimentos = (
+        armazem.listar_movimentos_custodia()
+        if hasattr(armazem, "listar_movimentos_custodia") else []
+    )
     analise = calcular_analise_por_periodo(
         transacoes, fim=data_ref, saldos_iniciais=iniciais,
-        saldos_externos=externos,
+        saldos_externos=externos, movimentos_custodia=movimentos,
     )
     cotacoes = armazem.ler_cotacoes_historicas(data_ref)
     itens = {}
@@ -145,6 +149,8 @@ def patrimonio_historico_na_data(
         "lucro_realizado": analise["totais"]["realizado_historico"],
         "base_de_custo_incompleta": analise["base_de_custo_incompleta"],
         "saldos_externos_declarados": analise["saldos_externos_declarados"],
+        "movimentacoes_custodia": analise["movimentacoes_custodia"],
+        "lucro_custodia_usdt": analise["lucro_custodia_usdt"],
         "saldo_usdc": quantidade_usdc,
         "operacoes_sem_taxa_documentada": analise["operacoes_sem_taxa_documentada"],
         "resultado_total": (
