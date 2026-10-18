@@ -502,4 +502,15 @@ class JanelaAnalisePeriodo(ctk.CTkFrame):
                 f"saídas {self._valor(self._analise['saidas_periodo_usdc'])}; "
                 f"saldo {self._valor(self._analise['saldo_usdc'])} USDC."
             )
+        if selecionado == "Todos os ativos":
+            sem_taxa = self._analise.get("operacoes_sem_taxa_documentada", 0)
+            msg += (
+                f" Taxas de corretagem conhecidas: "
+                f"{self._valor(self._analise.get('taxas_registradas_usdt', Decimal('0')))} USDT."
+            )
+            if sem_taxa:
+                msg += (
+                    f" Atenção: {sem_taxa} operação(ões) sem taxa informada; "
+                    "resultado não comprova lucro líquido integral."
+                )
         self._status.configure(text=msg, text_color=TEXT_SECONDARY)
