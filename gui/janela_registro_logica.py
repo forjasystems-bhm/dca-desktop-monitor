@@ -276,29 +276,19 @@ class JanelaRegistro(JanelaRegistroUI):
             else:
                 quantidade = valor / preco
 
-            if tipo is TipoOperacao.COMPRA and not self._eh_stablecoin(moeda):
-                operacoes = self._data_manager.carregar_operacoes()
-                validacao = self._engine.validar_saldo_suficiente(operacoes, float(valor))
-                if not validacao["saldo_suficiente"]:
-                    saldo_atual = validacao["saldo_atual"]
-                    faltam = abs(validacao["diferenca"])
-                    resposta = messagebox.askquestion(
-                        "Saldo USDT Insuficiente",
-                        f"Saldo atual: ${saldo_atual:,.2f} USDT\n"
-                        f"Valor da compra: ${float(valor):,.2f} USDT\n"
-                        f"Faltam: ${faltam:,.2f} USDT\n\n"
-                        f"Deseja continuar mesmo assim?",
-                        icon="warning",
-                    )
-                    if resposta == "no":
-                        return
-
             data_hora = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            operacao = [data_hora, moeda, tipo_csv, float(valor),
-                        float(preco), float(quantidade), taxa_brl]
+            # Strings decimais até o SQLite: evita perda de precisão por float.
+            operacao = [
+                data_hora, moeda, tipo_csv,
+                str(valor), str(preco), str(quantidade), str(taxa_brl),
+            ]
 
             if not self._data_manager.salvar_operacao(operacao):
-                messagebox.showerror("Erro", "Não foi possível salvar a operação.")
+                detalhe = getattr(self._data_manager, "ultimo_erro", None)
+                messagebox.showerror(
+                    "Operação não registrada",
+                    detalhe or "Os dados não passaram pela validação financeira.",
+                )
                 return
 
             if tipo is TipoOperacao.VENDA_TOTAL:
