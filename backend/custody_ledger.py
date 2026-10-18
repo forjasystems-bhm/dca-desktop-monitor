@@ -100,7 +100,7 @@ def apurar_custodia(saldos_externos, movimentos=(), *, ate: date | None = None):
             else:
                 target["custo"] += custo_venda
             transferencias += 1
-            if custo_fee is None:
+            if custo_fee is None and fee_coin > ZERO:
                 resultado_conhecido = False
             else:
                 custo_taxas_transferencias += custo_fee
