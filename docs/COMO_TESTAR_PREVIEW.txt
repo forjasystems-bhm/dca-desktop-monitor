@@ -1,4 +1,4 @@
-DCA DESKTOP MONITOR — PREVIEW PR #1
+DCA DESKTOP MONITOR — PREVIEW PR #2
 ================================
 
 VERSAO DE AVALIACAO (DADOS TOTALMENTE FICTICIOS)
@@ -29,3 +29,24 @@ ATENCAO
   foi assinado digitalmente; o projeto ainda nao possui certificado de assinatura.
 
 Fonte: https://github.com/tiolusystems/dca-desktop-monitor/pull/1
+
+VALIDACAO DA NOVA ABA "ANALISE POR PERIODO"
+------------------------------------------------------
+1. Entre na aba "Analise por Periodo" (segunda aba).
+2. Selecione "Todo o historico" e "Todos os ativos".
+   Total comprado historico: 1750 USDT.
+   Lucro realizado acumulado: +280 USDT.
+   BTC comprado 1000, vendido 1300, lucro realizado +300 USDT.
+   SOL comprado 100, vendido 80, resultado realizado -20 USDT.
+   LINK comprado 50, vendido 50, resultado realizado 0 USDT.
+   ETH comprado 600, custo da posicao aberta 600 USDT.
+3. Em "Personalizado", digite 2026-09-01 e 2026-09-30.
+   A compra de cada ativo e suas respectivas vendas no periodo devem
+   ser contabilizadas, inclusive se o ativo ja estiver zerado.
+4. Escolha "BTC" no filtro Ativo; confirme o lucro realizado +300 USDT.
+5. Escolha "SOL"; confirme o prejuizo realizado -20 USDT.
+6. Escolha "LINK"; confirme que aparece com resultado 0 USDT.
+
+LIMITACAO EXPLICITA: a aba NAO apresenta valor de mercado historico
+nem P/L NAO realizado em datas passadas, porque ainda nao foi implantada
+a consulta de cotacoes da data de encerramento. Valores em USDT.
