@@ -42,7 +42,7 @@ class RecuperacaoOfflineTests(unittest.TestCase):
     def test_restore_is_explicit_and_application_must_be_closed(self):
         with self.assertRaises(ErroBackupSQLite):
             ativar_restauracao_offline(
-                self.original["manifesto"],self.db,confirmacao="",applicativo_encerrado=True,
+                self.original["manifesto"],self.db,confirmacao="",aplicativo_encerrado=True,
             )
         with self.assertRaises(ErroBackupSQLite):
             ativar_restauracao_offline(
@@ -71,8 +71,9 @@ class RecuperacaoOfflineTests(unittest.TestCase):
                 self.original["manifesto"],self.db,confirmacao=CONFIRMACAO,
                 aplicativo_encerrado=True,
             )
-        self.assertEqual(self.count(),2)
         self.assertEqual(side.read_bytes(),b"untouched")
+        side.unlink()
+        self.assertEqual(self.count(),2)
 
     def test_simulated_failure_during_second_rename_rolls_back(self):
         import backend.restore_offline as module
