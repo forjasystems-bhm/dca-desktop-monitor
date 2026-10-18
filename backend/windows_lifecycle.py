@@ -4,6 +4,7 @@ Pure validation only: no installer creation, remote download or app mutation.
 """
 from pathlib import Path
 import hashlib
+import re
 
 from backend.backup_policy import backup_antes_atualizacao
 from backend.backup_sqlite import verificar_manifesto_sqlite
@@ -55,4 +56,42 @@ def planejar_atualizacao_sem_executar(pasta_app: Path, banco: Path,
         "banco_intacto": str(Path(banco).resolve()),
         "aplicada": False,
         "pendente": "Assinatura do publicador, consentimento e homologação final",
+    }
+
+def comparar_versoes(versao_atual: str, versao_nova: str) -> dict:
+    """Reject downgrades, nonnumeric tags and no-op update."""
+    def parse(v):
+        if not re.fullmatch(r"[0-9]+(?:\\.[0-9]+){2}", str(v)):
+            raise ErroCicloWindows("Versão deve ser no formato MAJOR.MINOR.PATCH.")
+        return tuple(int(x) for x in v.split("."))
+    atual,nova=parse(versao_atual),parse(versao_nova)
+    return {"atual":versao_atual,"nova":versao_nova,
+            "elegivel":nova>atual,"downgrade_bloqueado":nova<atual,
+            "versao_inalterada":nova==atual}
+
+
+def planejar_instalacao_sem_executar(
+    pasta_app: Path, pasta_dados: Path, pacote: Path, hash_pacote: str,
+    *, versao_atual: str, versao_nova: str,
+) -> dict:
+    """One versioned app path, one persistent data path. No install or release."""
+    apps=Path(pasta_app).expanduser().resolve()
+    dados=Path(pasta_dados).expanduser().resolve()
+    verificar_separacao_dados(apps,dados/"portfolio.sqlite3")
+    v=comparar_versoes(versao_atual,versao_nova)
+    if not v["elegivel"]:
+        raise ErroCicloWindows("Versão nova deve ser superior à instalada.")
+    pacote_conf=conferir_pacote_local(pacote,hash_pacote)
+    return {
+        "versao":v,
+        "destino_versao":str(apps/"versions"/versao_nova),
+        "diretorio_dados_persistente":str(dados),
+        "pacote":pacote_conf,
+        "novo_atalho_precisa_ser_criado":False,
+        "instalacao_executada":False,
+        "atualizacao_automatica_ativa":False,
+        "publicacao_autorizada":False,
+        "pendencias":["Autenticidade/assinatura do publicador",
+                      "Revisão manual de pacote", "Cópia SQLite pré-atualização",
+                      "Homologação e consentimento do usuário"],
     }
