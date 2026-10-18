@@ -182,6 +182,8 @@ class StablecoinsTests(unittest.TestCase):
         self.assertEqual(saldos_stablecoins(
             legado.carregar_operacoes_precisas())["saldos"]["USDC"], Decimal("40"))
         self.assertTrue(legado._store.diagnostico_livro_legado()["consistente"])
+        self.assertEqual(legado._store.quantidade_usdc_de_origem_legada(), 2)
+        self.assertEqual(self.dm._store.quantidade_usdc_de_origem_legada(), 0)
 
     def test_posicao_usdc_zerada_nao_exige_cotacao(self):
         self.assertTrue(self.depositar("USDC", "100"))
