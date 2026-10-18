@@ -112,6 +112,13 @@ def validar_livro(operacoes: list[dict], saldos_iniciais: list[dict] | None = No
             if inicial.get("Custo_Total_USDT") is None:
                 base_desconhecida.add(moeda)
     for _, indice, op in registros:
+        for inicial in saldos_iniciais or []:
+            if str(op["Data"])[:10] < str(inicial["Data"])[:10]:
+                raise ErroIntegridadeFinanceira(
+                    f"Operação {indice}: data anterior ao saldo inicial declarado "
+                    f"em {inicial['Data']}. Não retroagir movimentações sobre "
+                    "uma posição que ainda não foi comprovada."
+                )
         moeda = str(op["Moeda"]).strip().upper()
         tipo = str(op["Operacao"]).strip().lower()
         valor = Decimal(str(op["Valor_USDT"]))
