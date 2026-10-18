@@ -187,12 +187,20 @@ class Fin03Tests(unittest.TestCase):
         )))
         self.assertTrue(outra._store.diagnostico_livro_legado()["consistente"])
 
-    def test_usdc_fica_preservado_no_legado_sem_regra_contabil_inventada(self):
+    def test_fin04_usdc_tem_saldo_proprio_e_nao_credita_usdt(self):
         self.assertTrue(self.deposito())
-        self.assertFalse(self.db.salvar_operacao(novo(
+        saldo_usdt_antes = self.db.carregar_operacoes_precisas()
+        self.assertTrue(self.db.salvar_operacao(novo(
             "2026-01-02 09:00:00", "USDC", "compra", 10, 5, 10
         )))
-        self.assertIn("FIN-04", self.db.ultimo_erro)
+        from backend.stablecoin_ledger import saldos_stablecoins
+        saldos = saldos_stablecoins(self.db.carregar_operacoes_precisas())
+        self.assertEqual(saldos["saldos"]["USDC"], Decimal("10"))
+        from backend.backend import AnalysisEngine
+        self.assertEqual(
+            AnalysisEngine.calcular_saldo_usdt(self.db.carregar_operacoes())["saldo_atual"],
+            1000
+        )
 
     def test_duas_compras_concorrentes_nao_gastam_mesmo_saldo_duas_vezes(self):
         self.assertTrue(self.deposito("100"))
