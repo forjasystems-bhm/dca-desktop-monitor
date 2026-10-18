@@ -84,7 +84,7 @@ def validar_campos(registro: dict, linha: int) -> None:
             )
 
 
-def validar_livro(operacoes: list[dict]) -> None:
+def validar_livro(operacoes: list[dict], saldos_iniciais: list[dict] | None = None) -> None:
     """Valida TODOS os saldos em ordem temporal antes de confirmar a transação.
 
     Rejeita saldo USDT negativo, venda de quantidade não possuída e operações
@@ -99,6 +99,18 @@ def validar_livro(operacoes: list[dict]) -> None:
     caixa = ZERO
     caixa_usdc = ZERO
     posicoes = defaultdict(lambda: ZERO)
+    base_desconhecida = set()
+    for inicial in saldos_iniciais or []:
+        moeda = str(inicial["Moeda"]).upper()
+        qtd = Decimal(str(inicial["Quantidade"]))
+        if moeda == "USDT":
+            caixa += qtd
+        elif moeda == "USDC":
+            caixa_usdc += qtd
+        else:
+            posicoes[moeda] += qtd
+            if inicial.get("Custo_Total_USDT") is None:
+                base_desconhecida.add(moeda)
     for _, indice, op in registros:
         moeda = str(op["Moeda"]).strip().upper()
         tipo = str(op["Operacao"]).strip().lower()
@@ -120,6 +132,12 @@ def validar_livro(operacoes: list[dict]) -> None:
             caixa -= valor + taxa
             posicoes[moeda] += qtd
         else:
+            if moeda in base_desconhecida:
+                raise ErroIntegridadeFinanceira(
+                    f"Operação {indice} ({moeda}): custo inicial não informado. "
+                    "Antes de vender, documente o custo total do saldo inicial; "
+                    "não inventar lucro ou custo zero."
+                )
             posicoes[moeda] -= qtd
             if posicoes[moeda] < ZERO:
                 raise ErroIntegridadeFinanceira(
