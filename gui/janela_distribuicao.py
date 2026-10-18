@@ -316,7 +316,8 @@ class JanelaDistribuicao(ctk.CTkFrame):
         try:
             ops = self._data_manager.carregar_operacoes()
             iniciais = self._data_manager.carregar_posicoes_iniciais()
-            if not ops and not iniciais:
+            externos = self._data_manager.carregar_posicoes_externas()
+            if not ops and not iniciais and not externos:
                 self.after(0, self._ui_vazia)
                 return
             preco_mgr = self._price_manager
@@ -328,16 +329,18 @@ class JanelaDistribuicao(ctk.CTkFrame):
                     else preco_mgr.preco_brl)
             portfolio = self._engine.calcular_portfolio(
                 ops, precos, saldos_iniciais=iniciais,
+                saldos_externos=externos,
             )
             from backend.financial_audit import auditar_carteira_atual
             auditoria = auditar_carteira_atual(
                 self._data_manager.carregar_operacoes_precisas(), portfolio,
-                saldos_iniciais=iniciais,
+                saldos_iniciais=iniciais, saldos_externos=externos,
             )
             # Histórico FX não comprova custo em BRL do depósito USDT.
             usdt_pl = None
             dist = self._engine.calcular_distribuicao_portfolio(
                 ops, precos, saldos_iniciais=iniciais,
+                saldos_externos=externos,
             )
             self.after(0, lambda: self._atualizar_ui(
                 portfolio, usdt_pl, dist, taxa, auditoria,
@@ -383,6 +386,7 @@ class JanelaDistribuicao(ctk.CTkFrame):
             auditoria = auditar_carteira_atual(
                 self._data_manager.carregar_operacoes_precisas(), portfolio,
                 saldos_iniciais=self._data_manager.carregar_posicoes_iniciais(),
+                saldos_externos=self._data_manager.carregar_posicoes_externas(),
             )
         self._auditoria_fin06 = auditoria
         faltantes = resumo.get("cotacoes_pendentes", [])
