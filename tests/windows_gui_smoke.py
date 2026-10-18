@@ -105,6 +105,47 @@ def main():
             print("GUI_HISTORICA=PASS")
             print("PATRIMONIO_2026_09_30=2180 USDT")
             print("PATRIMONIO_SEM_COTACAO=INDISPONIVEL")
+            # FIN-02: a interface não pode transformar ativo aberto sem cotação em zero.
+            atual = {"BTC": 40000.0, "SOL": 130.0, "LINK": 12.0, "USDT": 1.0}
+            portfolio_sem_eth = app.analysis_engine.calcular_portfolio(
+                dm.carregar_operacoes(), atual
+            )
+            dist_sem_eth = app.analysis_engine.calcular_distribuicao_portfolio(
+                dm.carregar_operacoes(), atual
+            )
+            app.aba_distribuicao._atualizar_ui(
+                portfolio_sem_eth, None, dist_sem_eth, 5.1
+            )
+            root.update_idletasks()
+            root.update()
+            dash = app.aba_distribuicao
+            assert dash._lbl_patrimonio.cget("text") == "Indisponível"
+            assert dash._lbl_pl_nr.cget("text") == "Indisponível"
+            assert dash._lbl_pl.cget("text") == "Indisponível"
+            assert "280" in dash._lbl_pl_r.cget("text")
+            assert "Indisponível" in dash._lbl_div.cget("text")
+            eth_row = next(
+                row for row in dash._det_rows
+                if row._labels[0].cget("text") == "ETH"
+            )
+            assert eth_row._labels[1].cget("text").startswith("0.500")
+            assert eth_row._labels[5].cget("text") == "Indisponível"
+            assert eth_row._labels[6].cget("text") == "Indisponível"
+            app.aba_distribuicao._atualizar_ui(
+                app.analysis_engine.calcular_portfolio(
+                    dm.carregar_operacoes(), FakePriceManager.precos_cache
+                ),
+                None,
+                app.analysis_engine.calcular_distribuicao_portfolio(
+                    dm.carregar_operacoes(), FakePriceManager.precos_cache
+                ),
+                5.1,
+            )
+            root.update_idletasks()
+            root.update()
+            assert "Indisponível" not in dash._lbl_patrimonio.cget("text")
+            print("GUI_FIN02_SEM_COTACAO=PASS")
+            print("GUI_FIN02_RECUPERACAO=PASS")
             print("GUI_INTEGRADA=PASS")
             print("MODULOS=SQLite+AnalysisEngine+AssetPeriodAnalytics+CustomTkinter")
             print("REGISTROS_MIGRADOS=" + str(dm._store.diagnostico_integridade()["operacoes_importadas"]))
