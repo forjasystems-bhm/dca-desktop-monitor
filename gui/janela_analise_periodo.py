@@ -426,7 +426,8 @@ class JanelaAnalisePeriodo(ctk.CTkFrame):
         try:
             dia = self._dia_selecionado()
             model = calcular_analise_por_periodo(
-                self._dados.carregar_operacoes_precisas(), fim=dia
+                self._dados.carregar_operacoes_precisas(), fim=dia,
+                saldos_iniciais=self._dados.carregar_posicoes_iniciais(),
             )
             ativos_abertos = [
                 nome for nome, valores in model["ativos"].items()
@@ -511,7 +512,8 @@ class JanelaAnalisePeriodo(ctk.CTkFrame):
             self._analise = calcular_analise_por_periodo(
                 (self._dados.carregar_operacoes_precisas()
                  if hasattr(self._dados, "carregar_operacoes_precisas")
-                 else self._dados.carregar_operacoes()), inicio, fim
+                 else self._dados.carregar_operacoes()), inicio, fim,
+                saldos_iniciais=self._dados.carregar_posicoes_iniciais(),
             )
             itens = ["Todos os ativos", *self._analise["ativos"].keys()]
             self._ativos.configure(values=itens)
@@ -557,7 +559,8 @@ class JanelaAnalisePeriodo(ctk.CTkFrame):
                 self._valor(s["vendas_periodo"]),
                 self._valor(s["realizado_periodo"]),
                 self._valor(s["realizado_historico"]),
-                self._valor(s["custo_aberto"]),
+                ("Não apurado" if nome in self._analise["ativos_sem_custo"]
+                 else self._valor(s["custo_aberto"])),
                 self._valor(s["quantidade"], 8),
             ]
             self._arvore.insert(
@@ -591,4 +594,10 @@ class JanelaAnalisePeriodo(ctk.CTkFrame):
                     f" Atenção: {sem_taxa} operação(ões) sem taxa informada; "
                     "resultado não comprova lucro líquido integral."
                 )
+        if self._analise.get("ativos_sem_custo"):
+            msg += (
+                " Custo inicial desconhecido: "
+                + ", ".join(self._analise["ativos_sem_custo"])
+                + ". Resultado e preço médio completos não apurados."
+            )
         self._status.configure(text=msg, text_color=TEXT_SECONDARY)
