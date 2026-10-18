@@ -173,16 +173,22 @@ class JanelaRegistroUI(ctk.CTkFrame):
         self._entry_valor.bind("<KeyRelease>", self._on_calcular)
         self._lbl_quantidade = badge(8, TEXT_SECONDARY)
 
+        label(9, "TAXA CORRET. USDT")
+        self._entry_taxa_corretagem = entry(9)
+        self._entry_taxa_corretagem.configure(state="disabled")
+        self._lbl_taxa_info = badge(9, TEXT_SECONDARY)
+        self._lbl_taxa_info.configure(text="Opcional · deixe vazio se desconhecida")
+
         self._lbl_ajuda = ctk.CTkLabel(p, text="", font=_F_CARD_SUB,
                                        text_color=CYAN, anchor="w",
                                        width=360, justify="left")
-        self._lbl_ajuda.grid(row=9, column=1, columnspan=2,
+        self._lbl_ajuda.grid(row=10, column=1, columnspan=2,
                              sticky="w", pady=(4, 0))
 
         self._lbl_erro_saldo = ctk.CTkLabel(p, text="", font=_F_CARD_SUB,
                                             text_color=NEON_RED, anchor="w",
                                             width=360, justify="left")
-        self._lbl_erro_saldo.grid(row=10, column=1, columnspan=2,
+        self._lbl_erro_saldo.grid(row=11, column=1, columnspan=2,
                                   sticky="w", pady=(2, 4))
 
     def _build_footer(self, parent: ctk.CTkFrame):
@@ -224,6 +230,12 @@ class JanelaRegistroUI(ctk.CTkFrame):
 
     def get_valor_str(self) -> str:
         return self._entry_valor.get()
+
+    def get_taxa_corretagem_str(self) -> str:
+        return self._entry_taxa_corretagem.get().strip()
+
+    def set_taxa_corretagem_state(self, state: str) -> None:
+        self._entry_taxa_corretagem.configure(state=state)
 
     def get_preco_str(self) -> str:
         return self._entry_preco.get()
@@ -317,6 +329,9 @@ class JanelaRegistroUI(ctk.CTkFrame):
         self._entry_valor.delete(0, "end")
         self._entry_valor.configure(state="disabled")
 
+        self._entry_taxa_corretagem.configure(state="normal")
+        self._entry_taxa_corretagem.delete(0, "end")
+        self._entry_taxa_corretagem.configure(state="disabled")
         self._lbl_quantidade.configure(text="", text_color=TEXT_SECONDARY)
         self._lbl_preco_atual.configure(text="")
         self._lbl_saldo.configure(text="", text_color=NEON_GREEN)
