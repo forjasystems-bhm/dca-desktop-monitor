@@ -211,12 +211,14 @@ class ArmazemSQLite:
             "quantidade, taxa_brl, taxa_corretagem_usdt) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             tuple(row[campo] for campo in COLUNAS) + (row.get(CAMPO_FEE),))
 
-    def importar_csv(self, origem: Path) -> int:
+    def importar_csv(self, origem: Path, *, sha256_esperado: str | None = None) -> int:
         origem = Path(origem).expanduser().resolve()
         if not origem.is_file():
             raise ErroMigracao(f"CSV não encontrado: {origem}")
         dados = origem.read_bytes()
         sha = hashlib.sha256(dados).hexdigest()
+        if sha256_esperado is not None and sha != sha256_esperado:
+            raise ErroMigracao("CSV mudou após prévia; migração cancelada.")
         rows = _ler_csv_bytes(dados)
         con = self._conectar()
         try:
@@ -299,7 +301,7 @@ class ArmazemSQLite:
         preview = self.prever_importacao_csv(origem)
         if preview["sha256"] != sha256_confirmado:
             raise ErroMigracao("CSV mudou depois da prévia; verifique novamente.")
-        linhas = self.importar_csv(origem)
+        linhas = self.importar_csv(origem, sha256_esperado=sha256_confirmado)
         if linhas != preview["quantidade"]:
             raise ErroMigracao("Contagem final divergente. Verifique o banco.")
         diagnostico = self.diagnostico_integridade()
@@ -307,6 +309,35 @@ class ArmazemSQLite:
             raise ErroMigracao("Migração concluída sem backup íntegro — acesso bloqueado.")
         return {**preview, "importadas": linhas, "backup_valido": True,
                 "banco": str(self.arquivo_db)}
+
+    def informar_custo_inicial(self, moeda: str, custodia: str,
+                              custo_total_usdt: str) -> None:
+        try:
+            custo = Decimal(str(custo_total_usdt))
+        except (InvalidOperation, ValueError, TypeError) as exc:
+            raise ErroArmazenamento("Custo total inválido.") from exc
+        if not custo.is_finite() or custo <= 0:
+            raise ErroArmazenamento("Informe custo total positivo e documentado em USDT.")
+        con = self._conectar()
+        try:
+            con.execute("BEGIN IMMEDIATE")
+            row = con.execute(
+                "SELECT id FROM posicoes_iniciais WHERE moeda=? AND custodia=?",
+                (moeda.strip().upper(), custodia.strip()),
+            ).fetchone()
+            if row is None:
+                raise ErroArmazenamento("Saldo inicial não encontrado.")
+            con.execute(
+                "UPDATE posicoes_iniciais SET custo_total_usdt=? WHERE id=?",
+                (str(custo), row[0]),
+            )
+            con.execute("COMMIT")
+        except Exception:
+            if con.in_transaction:
+                con.execute("ROLLBACK")
+            raise
+        finally:
+            con.close()
 
     def listar_posicoes_iniciais(self) -> list[dict]:
         self._conferir_origem()
