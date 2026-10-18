@@ -98,6 +98,11 @@ def patrimonio_historico_na_data(
         alertas.append(
             "Faltam fechamentos históricos UTC em: " + ", ".join(sorted(ausentes))
         )
+    if quantidade_usdc < ZERO:
+        alertas.append(
+            "Saldo USDC histórico negativo; confira aportes e retiradas "
+            "antes de consolidar o patrimônio."
+        )
     if caixa < ZERO:
         alertas.append(
             "Saldo USDT histórico negativo: possíveis movimentos anteriores "
