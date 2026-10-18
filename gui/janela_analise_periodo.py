@@ -324,7 +324,7 @@ class JanelaAnalisePeriodo(ctk.CTkFrame):
                 pl_total = resultado["resultado_total"]
                 total = (
                     f"{self._valor(pl_total)} USDT"
-                    if pl_total is not None else "Não apurado — custo de USDC desconhecido"
+                    if pl_total is not None else "Não apurado — base de custo insuficiente"
                 )
                 nr = (
                     f"{self._valor(pl_nao)} USDT"
@@ -333,8 +333,8 @@ class JanelaAnalisePeriodo(ctk.CTkFrame):
                 texto = (
                     f"Patrimônio em {dia}: {valor}. "
                     + (
-                        "Resultado total não apurado por falta de custo documentado "
-                        "do USDC. Consulte os indicadores abaixo."
+                        "Resultado total não apurado por base de custo incompleta. "
+                        "Consulte os indicadores abaixo."
                         if pl_total is None else
                         "Fechamento diário UTC registrado no SQLite. "
                         "Detalhamento abaixo."
@@ -345,8 +345,12 @@ class JanelaAnalisePeriodo(ctk.CTkFrame):
                 texto = (
                     f"Patrimônio em {dia}: INDISPONÍVEL — "
                     + "; ".join(resultado["alertas"])
-                    + f" | P/L realizado (operações): "
-                    f"{self._valor(resultado['lucro_realizado'])} USDT."
+                    + " | P/L realizado total: "
+                    + (
+                        f"{self._valor(resultado['lucro_realizado'])} USDT."
+                        if resultado["lucro_realizado"] is not None
+                        else "Não apurado por ausência de custo documentado."
+                    )
                 )
                 cor = NEON_RED
             self._historico_valores.configure(text=texto, text_color=cor)
