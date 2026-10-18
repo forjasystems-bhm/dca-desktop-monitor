@@ -114,13 +114,15 @@ def _backup(conteudo: bytes, pasta: Path, sha: str) -> Path:
 
 
 class ArmazemSQLite:
-    def __init__(self, diretorio: Path, arquivo_legado: Path | None):
+    def __init__(self, diretorio: Path, arquivo_legado: Path | None, *,
+                 auto_importar_legado: bool = True):
         self.diretorio = Path(diretorio).expanduser().resolve()
         self.diretorio.mkdir(parents=True, exist_ok=True)
         self.arquivo_legado = Path(arquivo_legado).expanduser().resolve() if arquivo_legado else None
         self.arquivo_db = self.diretorio / "portfolio.sqlite3"
         self._inicializar()
-        if self.arquivo_legado is not None and self.arquivo_legado.is_file():
+        if (auto_importar_legado and self.arquivo_legado is not None
+                and self.arquivo_legado.is_file()):
             self.importar_csv(self.arquivo_legado)
 
     def _conectar(self):
@@ -161,7 +163,18 @@ class ArmazemSQLite:
             cols = {r[1] for r in conn.execute("PRAGMA table_info(operacoes)")}
             if "taxa_corretagem_usdt" not in cols:
                 conn.execute("ALTER TABLE operacoes ADD COLUMN taxa_corretagem_usdt TEXT")
-            conn.execute("PRAGMA user_version=3")
+            conn.execute("""CREATE TABLE IF NOT EXISTS posicoes_iniciais (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                data_posicao TEXT NOT NULL,
+                moeda TEXT NOT NULL,
+                quantidade TEXT NOT NULL,
+                custodia TEXT NOT NULL,
+                custo_total_usdt TEXT,
+                observacao TEXT NOT NULL DEFAULT '',
+                criado_em_utc TEXT NOT NULL,
+                UNIQUE(moeda, custodia)
+            )""")
+            conn.execute("PRAGMA user_version=4")
         finally:
             conn.close()
 
@@ -216,8 +229,12 @@ class ArmazemSQLite:
                     con.execute("COMMIT")
                     return 0
                 raise ErroMigracao("CSV legado diferente do registrado (alterado ou origem distinta); não misturar dados.")
-            if con.execute("SELECT COUNT(*) FROM operacoes").fetchone()[0]:
-                raise ErroMigracao("Banco contém operações; importação automática proibida.")
+            if (con.execute("SELECT COUNT(*) FROM operacoes").fetchone()[0]
+                or con.execute("SELECT COUNT(*) FROM posicoes_iniciais").fetchone()[0]):
+                raise ErroMigracao(
+                    "Banco contém operações ou saldos iniciais; "
+                    "não misturar migração CSV com outro ponto de partida."
+                )
             backup = _backup(dados, self.diretorio / "backups", sha)
             for row in rows:
                 self._inserir(con, row)
@@ -234,6 +251,138 @@ class ArmazemSQLite:
             raise
         finally:
             con.close()
+
+    def prever_importacao_csv(self, origem: Path) -> dict:
+        """Prévia somente leitura: confere linhas, símbolos, hash e banco alvo."""
+        origem = Path(origem).expanduser().resolve()
+        if not origem.is_file():
+            raise ErroMigracao(f"CSV não encontrado: {origem}")
+        dados = origem.read_bytes()
+        linhas = _ler_csv_bytes(dados)  # Falha antes de qualquer mutação.
+        con = self._conectar()
+        try:
+            usadas = con.execute("SELECT COUNT(*) FROM operacoes").fetchone()[0]
+            abertas = con.execute("SELECT COUNT(*) FROM posicoes_iniciais").fetchone()[0]
+            migrado = con.execute(
+                "SELECT sha256 FROM importacoes_legadas LIMIT 1"
+            ).fetchone()
+        finally:
+            con.close()
+        sha = hashlib.sha256(dados).hexdigest()
+        if migrado or usadas or abertas:
+            raise ErroMigracao(
+                "Este banco já está em uso: não importar sobre registros existentes."
+            )
+        return {
+            "arquivo": str(origem), "sha256": sha, "quantidade": len(linhas),
+            "moedas": sorted({r["Moeda"].upper() for r in linhas}),
+            "primeira_data": min((r["Data"] for r in linhas), default=None),
+            "ultima_data": max((r["Data"] for r in linhas), default=None),
+            "destino_vazio": True,
+            "duplicatas_identicas": len(linhas) - len({
+                tuple(r.get(c) for c in COLUNAS_EXPORTACAO) for r in linhas
+            }),
+        }
+
+    def importar_csv_conferido(self, origem: Path, sha256_confirmado: str) -> dict:
+        """Não aceita troca silenciosa de CSV entre prévia e confirmação."""
+        preview = self.prever_importacao_csv(origem)
+        if preview["sha256"] != sha256_confirmado:
+            raise ErroMigracao("CSV mudou depois da prévia; verifique novamente.")
+        linhas = self.importar_csv(origem)
+        if linhas != preview["quantidade"]:
+            raise ErroMigracao("Contagem final divergente. Verifique o banco.")
+        diagnostico = self.diagnostico_integridade()
+        if diagnostico["status"] != "OK" or not diagnostico["backup_valido"]:
+            raise ErroMigracao("Migração concluída sem backup íntegro — acesso bloqueado.")
+        return {**preview, "importadas": linhas, "backup_valido": True,
+                "banco": str(self.arquivo_db)}
+
+    def listar_posicoes_iniciais(self) -> list[dict]:
+        self._conferir_origem()
+        con = self._conectar()
+        try:
+            rows = con.execute(
+                "SELECT data_posicao, moeda, quantidade, custodia, "
+                "custo_total_usdt, observacao FROM posicoes_iniciais ORDER BY id"
+            ).fetchall()
+        finally:
+            con.close()
+        return [dict(zip(
+            ("Data", "Moeda", "Quantidade", "Custodia", "Custo_Total_USDT", "Observacao"), r
+        )) for r in rows]
+
+    def registrar_posicao_inicial(
+        self, *, moeda: str, quantidade: str, custodia: str,
+        data_posicao: str, custo_total_usdt: str | None = None,
+        observacao: str = "",
+    ) -> dict:
+        """Não cria operação fictícia de compra ou aporte em USDT."""
+        ativo = moeda.strip().upper()
+        local = custodia.strip()
+        if (not 2 <= len(ativo) <= 12 or not ativo.isascii()
+                or not ativo.isalnum()):
+            raise ErroArmazenamento("Código do ativo inválido.")
+        if not local or len(local) > 80:
+            raise ErroArmazenamento("Informe corretora ou carteira (até 80 caracteres).")
+        if len(observacao) > 500:
+            raise ErroArmazenamento("Observação excede 500 caracteres.")
+        try:
+            data = datetime.strptime(data_posicao, "%Y-%m-%d").date()
+            if data > datetime.now(timezone.utc).date():
+                raise ValueError("data futura")
+        except ValueError as exc:
+            raise ErroArmazenamento("Informe uma data de posição válida, não futura.") from exc
+        try:
+            qtd = Decimal(str(quantidade))
+            custo = (
+                None if custo_total_usdt is None or str(custo_total_usdt).strip() == ""
+                else Decimal(str(custo_total_usdt))
+            )
+        except (ValueError, InvalidOperation, TypeError) as exc:
+            raise ErroArmazenamento("Quantidade ou custo inválido.") from exc
+        if not qtd.is_finite() or qtd <= 0:
+            raise ErroArmazenamento("Quantidade inicial deve ser positiva.")
+        if custo is not None and (not custo.is_finite() or custo <= 0):
+            raise ErroArmazenamento("Custo total deve ser positivo ou ficar em branco.")
+        self._conferir_origem()
+        con = self._conectar()
+        try:
+            con.execute("BEGIN IMMEDIATE")
+            if con.execute("SELECT COUNT(*) FROM operacoes").fetchone()[0]:
+                raise ErroArmazenamento(
+                    "Saldo inicial somente antes do primeiro lançamento. "
+                    "Não inventar compras para conciliar operações antigas."
+                )
+            if con.execute("SELECT COUNT(*) FROM importacoes_legadas").fetchone()[0]:
+                raise ErroArmazenamento(
+                    "Histórico CSV já migrado: não somar saldos iniciais "
+                    "que podem duplicar posições. Exige conciliação específica."
+                )
+            con.execute(
+                "INSERT INTO posicoes_iniciais "
+                "(data_posicao,moeda,quantidade,custodia,custo_total_usdt,"
+                "observacao,criado_em_utc) VALUES (?,?,?,?,?,?,?)",
+                (data.isoformat(), ativo, str(qtd), local,
+                 str(custo) if custo is not None else None,
+                 observacao, datetime.now(timezone.utc).isoformat()),
+            )
+            con.execute("COMMIT")
+        except sqlite3.IntegrityError as exc:
+            if con.in_transaction:
+                con.execute("ROLLBACK")
+            raise ErroArmazenamento(
+                "Ativo já registrado nesse local. Não duplicar saldo; "
+                "conferir e corrigir o cadastro antes de prosseguir."
+            ) from exc
+        except Exception:
+            if con.in_transaction:
+                con.execute("ROLLBACK")
+            raise
+        finally:
+            con.close()
+        return {"moeda": ativo, "quantidade": str(qtd), "custodia": local,
+                "custo_total_usdt": str(custo) if custo is not None else None}
 
     def listar_preciso(self) -> list[dict]:
         """Mantém valores decimais como texto original para análise histórica."""
