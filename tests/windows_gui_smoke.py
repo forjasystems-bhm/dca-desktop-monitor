@@ -236,6 +236,43 @@ def main():
             assert d["totais"]["caixa_usdt"] == 1579, d["totais"]
             assert d["BTC"]["lucro_nao_realizado"] == 9
             print("GUI_FIN05_CAMPO_E_CALCULO=PASS")
+            # FIN-06: UI must not mistake trade volume for portfolio return,
+            # nor translate historic USD P/L using today's BRL exchange rate.
+            from backend.financial_audit import auditar_carteira_atual
+            from backend.backend import AnalysisEngine
+            def fatia(dia, moeda, tipo, valor, preco, quantidade):
+                return {
+                    "Data": f"{dia} 12:00:00", "Moeda": moeda,
+                    "Operacao": tipo, "Valor_USDT": str(valor),
+                    "Preco": str(preco), "Quantidade": str(quantidade),
+                    "Taxa_BRL": "5.20", "Taxa_Corretagem_USDT": (
+                        None if moeda == "USDT" else "0"
+                    ),
+                }
+            auditoria_op = [
+                fatia("2026-01-01", "USDT", "compra", 1000, 5.2, 1000),
+                fatia("2026-01-02", "BTC", "compra", 500, 500, 1),
+                fatia("2026-02-01", "BTC", "venda", 600, 600, 1),
+            ]
+            portfolio_audit = AnalysisEngine.calcular_portfolio(auditoria_op, {})
+            dist_audit = AnalysisEngine.calcular_distribuicao_portfolio(auditoria_op, {})
+            audit = auditar_carteira_atual(
+                auditoria_op, portfolio_audit,
+                data_referencia=date(2026, 3, 1),
+            )
+            assert audit["conciliado"] and audit["retorno_dietz_percentual"] == Decimal("10"), audit
+            dash.display_currency = "BRL"
+            dash._atualizar_ui(portfolio_audit, None, dist_audit, 5.10, audit)
+            root.update_idletasks()
+            root.update()
+            assert dash._lbl_retorno.cget("text") == "+10.00%"
+            assert "100.00 USDT" in dash._lbl_pl_r.cget("text")
+            assert "100.00 USDT" in dash._lbl_pl.cget("text")
+            assert "BRL" not in dash._lbl_pl_r.cget("text")
+            assert "BRL" not in dash._lbl_custo.cget("text")
+            print("GUI_FIN06_RETORNO_DIETZ=PASS")
+            print("GUI_FIN06_PNL_HISTORICO_SOMENTE_USDT=PASS")
+            dash.display_currency = "USD"
             print("GUI_INTEGRADA=PASS")
             print("MODULOS=SQLite+AnalysisEngine+AssetPeriodAnalytics+CustomTkinter")
             print("REGISTROS_MIGRADOS=" + str(dm._store.diagnostico_integridade()["operacoes_importadas"]))
