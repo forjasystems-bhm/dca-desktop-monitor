@@ -56,6 +56,26 @@ def patrimonio_historico_na_data(
             "cotacao": cotacao,
         }
 
+    # USDC é um saldo independente, não uma compra de cripto financiada em USDT.
+    quantidade_usdc = analise["saldo_usdc"]
+    if quantidade_usdc > ZERO:
+        cotacao = cotacoes.get("USDC")
+        if cotacao is None:
+            ausentes.append("USDC")
+            valor_usdc = None
+        else:
+            valor_usdc = quantidade_usdc * cotacao["preco"]
+            mercado_aberto += valor_usdc
+        itens["USDC"] = {
+            "quantidade": quantidade_usdc,
+            "custo_aberto": None,
+            "valor_mercado": valor_usdc,
+            "nao_realizado": None,
+            "lucro_realizado": None,
+            "cotacao": cotacao,
+            "transferencia_externa": True,
+        }
+
     # Reconstrução do saldo em USDT APENAS até o dia analisado.
     # Este histórico considera as operações do CSV legado, sem inferir taxas.
     caixa = ZERO
@@ -67,6 +87,9 @@ def patrimonio_historico_na_data(
         moeda = str(op["Moeda"]).upper()
         if moeda == "USDT":
             caixa += valor if tipo == "compra" else -valor
+        elif moeda == "USDC":
+            # Sem paridade implícita: valor nominal USDC não liquida caixa USDT.
+            continue
         else:
             caixa += -valor if tipo == "compra" else valor
 
@@ -82,7 +105,10 @@ def patrimonio_historico_na_data(
         )
     completo = not alertas
     total = caixa + mercado_aberto if completo else None
-    lucro_nr = mercado_aberto - custo_aberto if completo else None
+    lucro_nr = (
+        mercado_aberto - custo_aberto if completo and quantidade_usdc <= ZERO
+        else None
+    )
 
     return {
         "data_utc": data_ref.isoformat(),
@@ -96,8 +122,10 @@ def patrimonio_historico_na_data(
         "patrimonio_total": total,
         "lucro_nao_realizado": lucro_nr,
         "lucro_realizado": analise["totais"]["realizado_historico"],
+        "base_de_custo_incompleta": quantidade_usdc > ZERO,
+        "saldo_usdc": quantidade_usdc,
         "resultado_total": (
             analise["totais"]["realizado_historico"] + lucro_nr
-            if completo else None
+            if lucro_nr is not None else None
         ),
     }
