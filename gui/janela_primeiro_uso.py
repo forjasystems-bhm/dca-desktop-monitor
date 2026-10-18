@@ -91,6 +91,18 @@ class JanelaPrimeiroUso(ctk.CTkScrollableFrame):
                        padx=5, pady=(0, 9))
             self._campos[label] = entry
         self._campos["Data do saldo"].insert(0, datetime.now().strftime("%Y-%m-%d"))
+        self._externo_flag = ctk.BooleanVar(value=False)
+        ctk.CTkCheckBox(
+            wallet, variable=self._externo_flag, text=(
+                "Este saldo é EXTERNO e NÃO consta no CSV ou em outros "
+                "saldos cadastrados (confirmo a independência)"
+            ), text_color=TEXT_PRIMARY, fg_color=BTC_ORANGE,
+        ).pack(anchor="w", padx=15, pady=(4, 7))
+        self._motivo_correcao = ctk.CTkEntry(
+            wallet, width=630, fg_color=BG_INPUT,
+            placeholder_text="Motivo de uma correção auditada (mínimo 8 caracteres)",
+        )
+        self._motivo_correcao.pack(anchor="w", padx=12, pady=(0, 6))
         actions = ctk.CTkFrame(wallet, fg_color="transparent")
         actions.pack(anchor="w", padx=12, pady=(4, 12))
         ctk.CTkButton(
@@ -101,6 +113,10 @@ class JanelaPrimeiroUso(ctk.CTkScrollableFrame):
             actions, text="Informar custo posteriormente",
             fg_color=BG_INPUT, command=self._informar_custo,
         ).pack(side="left")
+        ctk.CTkButton(
+            actions, text="Corrigir saldo registrado",
+            fg_color=BG_INPUT, command=self._corrigir_saldo,
+        ).pack(side="left", padx=(9, 0))
         self._posicoes = ctk.CTkLabel(
             wallet, text="", wraplength=870, justify="left",
             text_color=TEXT_SECONDARY,
@@ -136,9 +152,11 @@ class JanelaPrimeiroUso(ctk.CTkScrollableFrame):
         try:
             diag = self._db._store.diagnostico_integridade()
             iniciais = self._db.carregar_posicoes_iniciais()
+            externos = self._db.carregar_posicoes_externas()
             self._estado.configure(text=(
                 f"SQLite: {diag['operacoes_atuais']} operações; "
                 f"{len(iniciais)} saldos iniciais; "
+                f"{len(externos)} saldos externos; "
                 f"CSV importado: {'sim' if diag['importacao'] else 'não'}; "
                 f"integridade: {diag['status']}."
             ))
@@ -150,6 +168,13 @@ class JanelaPrimeiroUso(ctk.CTkScrollableFrame):
                        else f"• custo {x['Custo_Total_USDT']} USDT")
                     for x in iniciais
                 ) if iniciais else "nenhum")
+                + ("  |  EXTERNOS AO CSV: " + "  |  ".join(
+                    f"{x['Moeda']} {x['Quantidade']} ({x['Custodia']})"
+                    + (" • custo desconhecido" if x["Custo_Total_USDT"] is None
+                       else f" • custo {x['Custo_Total_USDT']} USDT")
+                    for x in externos
+                ) if externos else "")
+            )
             ))
         except Exception as exc:
             self._estado.configure(text=f"Erro de integridade: {exc}", text_color=NEON_RED)
@@ -214,19 +239,27 @@ class JanelaPrimeiroUso(ctk.CTkScrollableFrame):
 
     def _salvar_saldo(self):
         vals = {k: e.get().strip() for k, e in self._campos.items()}
+        externa = self._externo_flag.get()
         if not messagebox.askyesno(
-            "Confirmar posição existente",
+            "Confirmar posição externa" if externa else "Confirmar saldo inicial",
             f"Registrar {vals['Quantidade']} {vals['Ativo']} na "
             f"custódia '{vals['Custódia']}'?\n"
-            "Não é compra, nem aporte, nem comprovação de custo fiscal.",
+            + ("Declaro que NÃO consta no CSV ou em outro saldo. "
+               "Não duplica o patrimônio já registrado."
+               if externa else "Saldo de primeiro acesso, sem compras fictícias."),
         ):
             return
         try:
-            resultado = self._db.registrar_posicao_inicial(
-                moeda=vals["Ativo"], quantidade=vals["Quantidade"],
-                custodia=vals["Custódia"], data_posicao=vals["Data do saldo"],
-                custo_total_usdt=vals["Custo total USDT (opcional)"] or None,
-            )
+            registrar = (self._db.registrar_posicao_externa if externa
+                        else self._db.registrar_posicao_inicial)
+            parametros = {
+                "moeda":vals["Ativo"],"quantidade":vals["Quantidade"],
+                "custodia":vals["Custódia"],"data_posicao":vals["Data do saldo"],
+                "custo_total_usdt":vals["Custo total USDT (opcional)"] or None,
+            }
+            if externa:
+                parametros["confirmacao_independente"] = True
+            resultado = registrar(**parametros)
             if resultado.get("aviso_backup_sqlite"):
                 messagebox.showwarning(
                     "Saldo salvo, atenção ao backup",
@@ -237,31 +270,54 @@ class JanelaPrimeiroUso(ctk.CTkScrollableFrame):
         except Exception as exc:
             messagebox.showerror("Saldo não registrado", str(exc))
 
-    def _informar_custo(self):
-        vals = {k: e.get().strip() for k, e in self._campos.items()}
-        if not vals["Custo total USDT (opcional)"]:
-            messagebox.showwarning(
-                "Custo documentado",
-                "Informe o custo TOTAL real em USDT do ativo e da custódia existentes.",
-            )
+    def _corrigir_saldo(self):
+        vals = {k: e.get().strip() for k,e in self._campos.items()}
+        origem = "externa" if self._externo_flag.get() else "inicial"
+        motivo = self._motivo_correcao.get().strip()
+        if len(motivo) < 8:
+            messagebox.showwarning("Motivo obrigatório",
+                                   "Explique o ajuste em pelo menos 8 caracteres.")
             return
         if not messagebox.askyesno(
-            "Registrar custo documentado",
-            "Esse custo foi obtido de registros confiáveis? "
-            "Não use cotação atual como custo de aquisição.",
+            "Correção registrada em auditoria",
+            "Confirmar alteração de quantidade ou custo? "
+            "O valor anterior e o motivo ficarão preservados em SQLite. "
+            "Será feito backup ANTES da alteração.",
         ):
             return
         try:
-            salvo = self._db._store.informar_custo_inicial(
-                vals["Ativo"], vals["Custódia"],
-                vals["Custo total USDT (opcional)"],
+            resultado = self._db.corrigir_posicao(
+                origem=origem, moeda=vals["Ativo"],
+                custodia=vals["Custódia"],
+                quantidade=vals["Quantidade"],
+                custo_total_usdt=vals["Custo total USDT (opcional)"] or None,
+                motivo=motivo,
             )
-            if salvo.get("aviso_backup_sqlite"):
-                messagebox.showwarning(
-                    "Custo salvo, atenção ao backup",
-                    salvo["aviso_backup_sqlite"],
-                )
+            if resultado.get("aviso_backup_sqlite"):
+                messagebox.showwarning("Alteração concluída",
+                                       resultado["aviso_backup_sqlite"])
             self.atualizar()
             self._on_change()
         except Exception as exc:
-            messagebox.showerror("Custo não alterado", str(exc))
+            messagebox.showerror("Correção cancelada", str(exc))
+
+    def _informar_custo(self):
+        vals = {k:e.get().strip() for k,e in self._campos.items()}
+        origem = "externa" if self._externo_flag.get() else "inicial"
+        saldos = (self._db.carregar_posicoes_externas() if origem=="externa"
+                  else self._db.carregar_posicoes_iniciais())
+        alvo = next((s for s in saldos if s["Moeda"]==vals["Ativo"].upper()
+                     and s["Custodia"]==vals["Custódia"]),None)
+        if alvo is None:
+            messagebox.showwarning("Saldo inexistente",
+                                   "Selecione o mesmo ativo e custódia já cadastrados.")
+            return
+        if not vals["Custo total USDT (opcional)"]:
+            messagebox.showwarning("Custo documentado",
+                                   "Informe o custo TOTAL documentado em USDT.")
+            return
+        self._campos["Quantidade"].delete(0,"end")
+        self._campos["Quantidade"].insert(0,str(alvo["Quantidade"]))
+        if not self._motivo_correcao.get().strip():
+            self._motivo_correcao.insert(0,"Custo histórico documentado pelo usuário")
+        self._corrigir_saldo()
