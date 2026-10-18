@@ -195,6 +195,7 @@ class JanelaSplash:
         self._status_msg     = "Inicializando node..."
         self._animacao       = None
         self._app_construida = False
+        self._app_agendada = False
         self._block_height   = self._BLOCK_BASE + random.randint(0, 999)
         self._pulse_phase    = 0.0
 
@@ -422,17 +423,9 @@ class JanelaSplash:
         """Abre sem rede; falha somente se os dados locais não forem confiáveis."""
         try:
             self._status_msg = "Verificando banco local e backups..."
-            data_mgr = DataManager()
-            diagnostico = data_mgr._store.diagnostico_integridade()
-            if diagnostico["status"] != "OK":
-                raise RuntimeError(
-                    "Verificação de integridade do SQLite/backup falhou. "
-                    "Nenhum dado foi substituído. Consulte os arquivos locais."
-                )
-            # PriceManager configura cliente HTTP mas não acessa a rede.
-            # A primeira consulta será assíncrona depois de mostrar a janela.
+            from backend.local_startup import abrir_carteira_local
+            data_mgr, price_mgr = abrir_carteira_local()
             self._status_msg = "Abrindo carteira local (sem depender da Binance)..."
-            price_mgr = PriceManager("binance")
             self.data_manager = data_mgr
             self.price_manager = price_mgr
             self.sucesso = True
@@ -446,12 +439,15 @@ class JanelaSplash:
         except Exception:
             pass
 
-        if self.sucesso and not self._app_construida:
+        if self.sucesso and not self._app_agendada:
+            self._app_agendada = True
             try:
                 self.lbl_net_val.configure(text="local", text_color="#00c896")
             except Exception:
                 pass
             self.splash.after(300, self._construir_app)
+            return
+        if self._app_agendada:
             return
 
         if self._erro is not None:
