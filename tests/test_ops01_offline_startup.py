@@ -4,6 +4,7 @@ import hashlib
 import sqlite3
 import tempfile
 import unittest
+from contextlib import closing
 
 from backend.backend import DataManager, PriceManager, AnalysisEngine
 from backend.local_startup import abrir_carteira_local, FalhaInicializacaoLocal
@@ -94,7 +95,7 @@ class InicializacaoOffline(unittest.TestCase):
         # silently regenerated; only an explicit restoration may unblock.
         self.assertFalse(backup.exists())
         self.assertEqual(self.csv.read_bytes(), raw)
-        with sqlite3.connect(dm.arquivo_db) as conn:
+        with closing(sqlite3.connect(dm.arquivo_db)) as conn:
             self.assertEqual(
                 conn.execute("SELECT COUNT(*) FROM operacoes").fetchone()[0], 2
             )
@@ -102,7 +103,7 @@ class InicializacaoOffline(unittest.TestCase):
     def test_sqlite_corruption_never_displays_empty_portfolio_as_success(self):
         dm, _ = self.abrir()
         db_path = Path(dm.arquivo_db)
-        with sqlite3.connect(db_path) as conn:
+        with closing(sqlite3.connect(db_path)) as conn:
             conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
         db_path.write_bytes(b"not-a-sqlite-database")
         with self.assertRaises((sqlite3.DatabaseError, FalhaInicializacaoLocal)):
