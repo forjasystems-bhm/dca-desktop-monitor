@@ -70,7 +70,12 @@ class JanelaDistribuicao(ctk.CTkFrame):
         self._badge.set_estado(estado)
 
     def set_status(self, mensagem: str, cor: str = TEXT_SECONDARY):
-        self._badge.set_status(mensagem, cor)
+        if mensagem and len(mensagem) > 32:
+            self._badge.set_status("Verificar dados", cor)
+            self._status_detalhe.configure(text=mensagem, text_color=cor)
+        else:
+            self._status_detalhe.configure(text="")
+            self._badge.set_status(mensagem, cor)
 
     def set_countdown(self, segundos: int):
         self._badge.set_countdown(segundos)
@@ -90,6 +95,22 @@ class JanelaDistribuicao(ctk.CTkFrame):
             on_change=self._on_currency_change,
         )
         self._brl_toggle.pack(side=tk.RIGHT, padx=(5, 6), pady=2)
+
+        # Mensagens financeiras extensas não devem alargar o badge e
+        # desaparecer sob as abas. Mostrá-las em linha própria, com quebra.
+        self._status_detalhe = ctk.CTkLabel(
+            self, text="", font=ctk.CTkFont("Segoe UI", 11),
+            text_color=TEXT_SECONDARY, justify="left", anchor="w",
+            wraplength=830,
+        )
+        self._status_detalhe.pack(fill="x", padx=13, pady=(0, 2))
+        self.bind(
+            "<Configure>",
+            lambda e: self._status_detalhe.configure(
+                wraplength=max(320, e.width - 48)
+            ) if e.widget is self else None,
+            add="+",
+        )
 
         content = ctk.CTkFrame(self, fg_color="transparent")
         content.pack(fill="both", expand=True)
