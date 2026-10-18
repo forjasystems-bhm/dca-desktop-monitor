@@ -10,7 +10,7 @@
 
 ## Visão Geral
 
-Este aplicativo foi criado para investidores de criptomoedas que buscam uma maneira simples e offline de gerenciar suas transações. Em vez de depender de planilhas complexas ou plataformas online, o Portfolio DCA Monitor salva seus dados localmente em um arquivo `CSV`, garantindo total privacidade e controle.
+Este aplicativo foi criado para investidores de criptomoedas que desejam acompanhar posições e operações localmente. A arquitetura em desenvolvimento mantém o banco operacional **SQLite**, preserva o CSV anterior como origem auditável e oferece um primeiro acesso explícito para importar operações ou declarar saldos já existentes em custódia.
 
 Ele busca preços em tempo real da Binance para fornecer uma análise precisa e atualizada do desempenho do seu portfólio.
 
@@ -18,8 +18,8 @@ Ele busca preços em tempo real da Binance para fornecer uma análise precisa e 
 
 *   **✍️ Registro de Transações:** Adicione operações de compra e venda de forma intuitiva.
 *   **📊 Análise Detalhada:** Visualize seu preço médio (PMC), custo total da posição, valor de mercado atual, e lucros/perdas realizados e não realizados para cada ativo.
-*   **💵 Conversão de Moeda:** Alterne a visualização de todos os valores monetários entre **USD** e **BRL** com um único clique.
-*   **📉 Taxas Realistas:** Aplica uma taxa de negociação de **0.1%** em cada operação, simulando as condições de uma exchange real.
+*   **💵 Conversão de Moeda:** Consulte patrimônio de mercado em USDT ou BRL quando houver câmbio atual; custos e lucros históricos **não** são convertidos retroativamente pelo câmbio do dia.
+*   **📉 Taxa de corretagem:** Campo opcional em USDT, sempre documentado; o sistema não presume 0,1% nem inventa taxas antigas.
 *   **🥧 Distribuição de Portfólio:** Entenda a alocação dos seus ativos com um resumo claro e uma representação visual em texto.
 *   **📋 Histórico Completo:** Todas as suas transações são listadas e podem ser facilmente consultadas.
 *   **✏️ Edição e Exclusão:** Corrija ou remova transações existentes diretamente pela interface.
@@ -75,6 +75,10 @@ dca-desktop-monitor/
     ├── brl_toggle.py               # Toggle USD/BRL
     └── combo_custom.py             # Combobox customizado
 ```
+
+## ⚙️ Ambiente de desenvolvimento (NÃO é instalador homologado)
+
+> **A versão integrada ainda não foi publicada para primeiro download.** Não instale um preview como versão operacional nem migre o único CSV real. Leia [Primeiro uso e migração](docs/PRIMEIRO_USO_E_MIGRACAO.md) antes de testar dados reais em cópias.
 
 ## ⚙️ Instalação e Execução
 
