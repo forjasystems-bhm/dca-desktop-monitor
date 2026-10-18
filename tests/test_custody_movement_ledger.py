@@ -164,6 +164,23 @@ class MovimentacaoCustodiaTests(unittest.TestCase):
         self.assertEqual(self.dm.carregar_auditoria_posicoes(),[])
         self.assertEqual(len(self.dm.carregar_movimentos_custodia()),1)
 
+    def test_old_wallet_can_move_before_unrelated_later_custody_snapshot(self):
+        # A later second wallet must not invalidate valid earlier transfers
+        # from an independently attested cold wallet.
+        self.dm.registrar_posicao_externa(
+            moeda="BTC",quantidade="0.05",custodia="Other Vault",
+            data_posicao="2026-10-18",custo_total_usdt="20",
+            confirmacao_independente=True,
+        )
+        self.mover(data_utc="2026-10-01")
+        history=calcular_analise_por_periodo(
+            self.dm.carregar_operacoes_precisas(),fim="2026-10-02",
+            saldos_externos=self.dm.carregar_posicoes_externas(),
+            movimentos_custodia=self.dm.carregar_movimentos_custodia(),
+        )
+        self.assertEqual(history["ativos"]["BTC"]["quantidade"],Decimal("0.8"))
+        self.assertEqual(len(self.dm.carregar_movimentos_custodia()),1)
+
     def test_ledger_fee_transfer_cannot_be_hidden_as_zero(self):
         with self.assertRaises(Exception):
             self.mover(taxa_ativo="")
