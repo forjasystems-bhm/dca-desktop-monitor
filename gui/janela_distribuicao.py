@@ -113,6 +113,7 @@ class JanelaDistribuicao(ctk.CTkFrame):
 
         self._lbl_patrimonio = painel.lbl_patrimonio
         self._lbl_custo      = painel.lbl_custo
+        self._lbl_compras_hist = painel.lbl_compras_hist
         self._lbl_pl_nr      = painel.lbl_pl_nr
         self._lbl_pl_r       = painel.lbl_pl_r
         self._lbl_pl         = painel.lbl_pl
@@ -216,7 +217,7 @@ class JanelaDistribuicao(ctk.CTkFrame):
 
     def _resetar_cards(self):
         for lbl in (
-            self._lbl_patrimonio, self._lbl_custo, self._lbl_pl_nr,
+            self._lbl_patrimonio, self._lbl_custo, self._lbl_compras_hist, self._lbl_pl_nr,
             self._lbl_pl_r, self._lbl_pl, self._lbl_pct, self._lbl_retorno,
             self._lbl_div, self._lbl_melhor, self._lbl_pior,
         ):
@@ -327,7 +328,8 @@ class JanelaDistribuicao(ctk.CTkFrame):
 
         tot_pl    = tot_pl_nr + tot_pl_r
         pct_nr    = (tot_pl_nr / tot_custo * 100) if tot_custo > 0.000001 else 0
-        pct_total = (tot_pl    / tot_custo * 100) if tot_custo > 0.000001 else 0
+        tot_comprado = portfolio.get("totais", {}).get("compras_historicas_usdt", 0)
+        pct_total = (tot_pl / tot_comprado * 100) if tot_comprado > 0.000001 else 0
 
         cor_pl      = NEON_GREEN if tot_pl    >= 0 else NEON_RED
         cor_nr      = NEON_GREEN if tot_pl_nr >= 0 else NEON_RED
@@ -336,6 +338,8 @@ class JanelaDistribuicao(ctk.CTkFrame):
 
         self._lbl_patrimonio.configure(text=self._fmt_val(tot_val))
         self._lbl_custo.configure(     text=self._fmt_val(tot_custo))
+        # Compras históricas: sempre em USDT, sem converter pelo câmbio atual.
+        self._lbl_compras_hist.configure(text=f"{tot_comprado:,.2f} USDT")
         self._lbl_pl_nr.configure(     text=self._fmt_val(tot_pl_nr),  text_color=cor_nr)
         self._lbl_pl_r.configure(      text=self._fmt_val(tot_pl_r),   text_color=cor_r)
         self._lbl_pl.configure(        text=self._fmt_val(tot_pl),     text_color=cor_pl)
@@ -370,7 +374,12 @@ class JanelaDistribuicao(ctk.CTkFrame):
         pl_nr   = dados.get("lucro_nao_realizado", 0)
         pl_r    = dados.get("lucro_realizado", 0)
         pl_tot  = dados.get("lucro_total", 0)
-        str_pct = f"{(pl_nr / custo * 100):+.2f}%" if custo > 0.000001 else "0.00%"
+        comprado_hist = dados.get("total_comprado_usdt", 0)
+        # Para posição encerrada, o percentual representa resultado realizado.
+        base_pct = (pl_nr / custo) if custo > 0.000001 else (
+            pl_r / comprado_hist if comprado_hist > 0.000001 else 0
+        )
+        str_pct = f"{base_pct * 100:+.2f}%"
         bg      = BG_CARD if idx % 2 == 0 else BG_DEEP
 
         if moeda == "USDT (Caixa)":

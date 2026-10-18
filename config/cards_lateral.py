@@ -34,12 +34,13 @@ _BG_ROW_HOV = _lighten(BG_CARD, 0.16)
 
 _ITEMS_DEF = [
     ("patrimonio", "💼 Patrimônio Total",  "preço mercado × posição",  BTC_ORANGE),
-    ("custo",      "📥 Custo Total",       "soma do investido",         CYAN),
+    ("custo",      "📥 Custo Posição",     "capital das posições abertas", CYAN),
+    ("compras_hist","📚 Compras Históricas","total comprado em ativos (USDT)", CYAN),
     ("pl_nr",      "📈 P/L Não Realizado", "ganho em aberto",           NEON_GREEN),
     ("pl_r",       "💰 P/L Realizado",     "lucro já sacado/vendido",   NEON_GREEN),
     ("pl",         "🏁 P/L Total",         "realizado + não realizado", NEON_GREEN),
     ("pct",        "📊 Ganho %",           "P/L NR ÷ custo total",      NEON_GREEN),
-    ("retorno",    "📉 Retorno Total %",   "P/L total ÷ custo total",   NEON_GREEN),
+    ("retorno",    "📉 Retorno Total %",   "P/L total ÷ compras históricas", NEON_GREEN),
     ("div",        "🎯 Diversificação",    "ativos distintos",          TEXT_SECONDARY),
     ("melhor",     "🏆 Melhor Ativo",      "maior P/L total",           NEON_GREEN),
     ("pior",       "💀 Pior Ativo",        "menor P/L total",           NEON_RED),
@@ -194,6 +195,8 @@ class PainelCards(ctk.CTkScrollableFrame):
     def lbl_patrimonio(self) -> ctk.CTkLabel: return self._labels["patrimonio"]
     @property
     def lbl_custo(self)      -> ctk.CTkLabel: return self._labels["custo"]
+    @property
+    def lbl_compras_hist(self) -> ctk.CTkLabel: return self._labels["compras_hist"]
     @property
     def lbl_pl_nr(self)      -> ctk.CTkLabel: return self._labels["pl_nr"]
     @property

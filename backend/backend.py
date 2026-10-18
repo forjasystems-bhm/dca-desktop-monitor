@@ -194,16 +194,20 @@ class AnalysisEngine:
             'investido_liquido': 0,
             'realizado': 0,
             'nao_realizado': 0,
-            'valor_atual': 0
+            'valor_atual': 0,
+            'compras_historicas_usdt': 0,
+            'vendas_historicas_usdt': 0,
         }
         for moeda, ops in ops_por_moeda.items():
             analise_moeda = AnalysisEngine._analisar_moeda(ops, precos_atuais.get(moeda, 0))
-            if analise_moeda.get('valor_atual_posicao', 0) > 0.01 or abs(analise_moeda.get('lucro_realizado', 0)) > 0.01:
-                resultado[moeda] = analise_moeda
-                totais['investido_liquido'] += analise_moeda['custo_posicao_final']
-                totais['realizado'] += analise_moeda['lucro_realizado']
-                totais['nao_realizado'] += analise_moeda['lucro_nao_realizado']
-                totais['valor_atual'] += analise_moeda['valor_atual_posicao']
+            # Posições encerradas continuam no histórico, inclusive no empate.
+            resultado[moeda] = analise_moeda
+            totais['investido_liquido'] += analise_moeda['custo_posicao_final']
+            totais['realizado'] += analise_moeda['lucro_realizado']
+            totais['nao_realizado'] += analise_moeda['lucro_nao_realizado']
+            totais['valor_atual'] += analise_moeda['valor_atual_posicao']
+            totais['compras_historicas_usdt'] += analise_moeda['total_comprado_usdt']
+            totais['vendas_historicas_usdt'] += analise_moeda['total_vendido_usdt']
         totais['valor_atual'] += saldo_caixa_usdt
         if saldo_caixa_usdt > 0.01:
             resultado['USDT (Caixa)'] = {
@@ -308,6 +312,8 @@ class AnalysisEngine:
         custo_total = Decimal('0')
         quantidade_total = Decimal('0')
         lucro_realizado = Decimal('0')
+        total_comprado = Decimal('0')
+        total_vendido = Decimal('0')
         pmc = Decimal('0')
         operacoes_processadas = []
         for op in ops:
@@ -315,6 +321,7 @@ class AnalysisEngine:
             preco = Decimal(str(op['Preco']))
             qtd = Decimal(str(op['Quantidade']))
             if op['Operacao'] == 'compra':
+                total_comprado += valor
                 custo_total += valor
                 quantidade_total += qtd
                 pmc = custo_total / quantidade_total if quantidade_total > 0 else Decimal('0')
@@ -331,9 +338,13 @@ class AnalysisEngine:
                     continue
                 custo_da_venda = qtd * pmc
                 lucro_venda = valor - custo_da_venda
+                total_vendido += valor
                 lucro_realizado += lucro_venda
                 custo_total -= custo_da_venda
                 quantidade_total -= qtd
+                if quantidade_total == 0:
+                    custo_total = Decimal('0')
+                    pmc = Decimal('0')
                 operacoes_processadas.append({
                     'tipo': 'venda', 'data': op['Data'], 'quantidade': float(qtd),
                     'preco': float(preco), 'valor': float(valor), 'lucro': float(lucro_venda)
@@ -347,7 +358,11 @@ class AnalysisEngine:
             'pmc_final': float(pmc), 'custo_posicao_final': custo_final,
             'valor_atual_posicao': valor_atual, 'lucro_realizado': float(lucro_realizado),
             'lucro_nao_realizado': lucro_nao_realizado, 'lucro_total': float(lucro_realizado) + lucro_nao_realizado,
-            'preco_de_mercado': preco_atual
+            'preco_de_mercado': preco_atual,
+            # Valores brutos históricos em USDT, inclusive após posição zerada.
+            # Não representam aportes em BRL nem substituem custo da posição aberta.
+            'total_comprado_usdt': float(total_comprado),
+            'total_vendido_usdt': float(total_vendido),
         }
 
 
