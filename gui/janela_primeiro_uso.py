@@ -197,11 +197,18 @@ class JanelaPrimeiroUso(ctk.CTkScrollableFrame):
             self._btn_importar.configure(state="disabled")
             self.atualizar()
             self._on_change()
-            messagebox.showinfo(
-                "Histórico preservado",
-                f"{result['importadas']} operações importadas com backup "
-                "e SHA-256 verificados. Nenhum registro foi recriado ou eliminado.",
-            )
+            if result.get("aviso_backup_sqlite"):
+                messagebox.showwarning(
+                    "Migração concluída com alerta",
+                    f"{result['importadas']} operações foram gravadas. "
+                    + result["aviso_backup_sqlite"],
+                )
+            else:
+                messagebox.showinfo(
+                    "Histórico preservado",
+                    f"{result['importadas']} operações importadas com CSV original "
+                    "e snapshot SQLite verificados; nenhuma linha foi removida.",
+                )
         except Exception as exc:
             messagebox.showerror("Importação não concluída", str(exc))
 
@@ -215,11 +222,16 @@ class JanelaPrimeiroUso(ctk.CTkScrollableFrame):
         ):
             return
         try:
-            self._db.registrar_posicao_inicial(
+            resultado = self._db.registrar_posicao_inicial(
                 moeda=vals["Ativo"], quantidade=vals["Quantidade"],
                 custodia=vals["Custódia"], data_posicao=vals["Data do saldo"],
                 custo_total_usdt=vals["Custo total USDT (opcional)"] or None,
             )
+            if resultado.get("aviso_backup_sqlite"):
+                messagebox.showwarning(
+                    "Saldo salvo, atenção ao backup",
+                    resultado["aviso_backup_sqlite"],
+                )
             self.atualizar()
             self._on_change()
         except Exception as exc:
