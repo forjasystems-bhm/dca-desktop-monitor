@@ -53,7 +53,7 @@ jobs:
       - name: Upload temporary Windows preview
         uses: actions/upload-artifact@v4
         with:
-          name: DCA-Preview-PR1-Windows
+          name: DCA-Preview-Asset-Periods-Windows
           path: dist/DCA-Preview/
           if-no-files-found: error
           retention-days: 14
