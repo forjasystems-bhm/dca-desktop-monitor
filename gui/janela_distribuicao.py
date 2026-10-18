@@ -50,6 +50,7 @@ class JanelaDistribuicao(ctk.CTkFrame):
         self._engine        = analysis_engine
 
         self._usdt_pl_brl     = {}
+        self._taxa_brl_valida = None
         self.display_currency = "USD"
         self.brl_toggle_var   = tk.BooleanVar(value=False)
 
@@ -202,17 +203,21 @@ class JanelaDistribuicao(ctk.CTkFrame):
         row.configure(fg_color=_HOVER_BG if entering else row._bg_normal)
 
     def _fmt_val(self, val):
+        if val is None:
+            return "Indisponível"
         if self.display_currency == "BRL":
-            taxa = self._price_manager.preco_brl
-            if taxa and taxa > 0:
-                return f"R${val * taxa:,.2f}"
+            if self._taxa_brl_valida is None:
+                return "BRL indisponível"
+            return f"R${val * self._taxa_brl_valida:,.2f}"
         return f"${val:,.2f}"
 
     def _fmt_prc(self, val):
+        if val is None:
+            return "Indisponível"
         if self.display_currency == "BRL":
-            taxa = self._price_manager.preco_brl
-            if taxa and taxa > 0:
-                return f"R${val * taxa:,.4f}"
+            if self._taxa_brl_valida is None:
+                return "BRL indisponível"
+            return f"R${val * self._taxa_brl_valida:,.4f}"
         return f"${val:,.4f}"
 
     def _resetar_cards(self):
@@ -237,11 +242,17 @@ class JanelaDistribuicao(ctk.CTkFrame):
             if not ops:
                 self.after(0, self._ui_vazia)
                 return
-            portfolio = self._engine.calcular_portfolio(ops, self._price_manager.precos_cache)
-            usdt_pl   = self._engine.calcular_pl_usdt_brl(ops, self._price_manager.preco_brl)
-            dist      = self._engine.calcular_distribuicao_portfolio(ops, self._price_manager.precos_cache)
-            self.after(0, lambda: self._atualizar_ui(portfolio, usdt_pl, dist))
-            self.after(0, lambda: self.set_estado("conectado"))  
+            preco_mgr = self._price_manager
+            precos = (preco_mgr.precos_para_avaliacao()
+                      if hasattr(preco_mgr, "precos_para_avaliacao")
+                      else preco_mgr.precos_cache)
+            taxa = (preco_mgr.taxa_brl_para_avaliacao()
+                    if hasattr(preco_mgr, "taxa_brl_para_avaliacao")
+                    else preco_mgr.preco_brl)
+            portfolio = self._engine.calcular_portfolio(ops, precos)
+            usdt_pl = self._engine.calcular_pl_usdt_brl(ops, taxa or 0)
+            dist = self._engine.calcular_distribuicao_portfolio(ops, precos)
+            self.after(0, lambda: self._atualizar_ui(portfolio, usdt_pl, dist, taxa))
         except Exception as e:
             self.after(0, lambda: self.set_status("❌ Falha no processamento", NEON_RED))
             self.after(0, lambda: messagebox.showerror("Exceção do Engine", str(e)))
@@ -271,11 +282,22 @@ class JanelaDistribuicao(ctk.CTkFrame):
         row._eh_vazio = True
         self._det_rows.append(row)
 
-    def _atualizar_ui(self, portfolio, usdt_pl, dist):
+    def _atualizar_ui(self, portfolio, usdt_pl, dist, taxa_brl=None):
         if self._det_rows and getattr(self._det_rows[0], '_eh_vazio', False):
             self._limpar_det_rows()
 
         self._usdt_pl_brl = usdt_pl
+        self._taxa_brl_valida = taxa_brl if taxa_brl and taxa_brl > 0 else None
+        resumo = portfolio.get("totais", {})
+        faltantes = resumo.get("cotacoes_pendentes", [])
+        if faltantes:
+            self.set_estado("offline")
+            self.set_status(
+                "Cotação indisponível: " + ", ".join(faltantes),
+                NEON_RED,
+            )
+        else:
+            self.set_estado("conectado")
         distribuicao = dist.get("distribuicao", {})
 
         if distribuicao:
@@ -301,24 +323,26 @@ class JanelaDistribuicao(ctk.CTkFrame):
                 if moeda_pl in ("totais", "USDT (Caixa)"):
                     continue
                 custo_pl = dados_pl.get("custo_posicao_final", 0)
-                if custo_pl > 0.000001:
-                    pl_map[moeda_pl] = dados_pl.get("lucro_nao_realizado", 0) / custo_pl * 100
+                pl_valido = dados_pl.get("lucro_nao_realizado")
+                if custo_pl > 0.000001 and pl_valido is not None:
+                    pl_map[moeda_pl] = pl_valido / custo_pl * 100
 
             self.donut_chart.atualizar_dados(ord_dist, cor_map, pl_map=pl_map)
         else:
-            self._lbl_div.configure(text="--", text_color=TEXT_SECONDARY)
+            self._lbl_div.configure(
+                text="Indisponível (sem cotação)" if faltantes else "--",
+                text_color=NEON_RED if faltantes else TEXT_SECONDARY,
+            )
             self.donut_chart.limpar()
 
         moedas_dados = {m: d for m, d in portfolio.items() if m != "totais"}
-        ord_port     = sorted(moedas_dados.items(), key=lambda item: item[1].get("valor_atual_posicao", 0), reverse=True)
-
-        tot_custo = tot_val = tot_pl_nr = tot_pl_r = 0
+        ord_port = sorted(
+            moedas_dados.items(),
+            key=lambda item: item[1].get("valor_atual_posicao") or 0,
+            reverse=True,
+        )
         for idx, (moeda, dados) in enumerate(ord_port):
             self._inserir_detalhe(moeda, dados, idx)
-            tot_custo += dados.get("custo_posicao_final", 0)
-            tot_val   += dados.get("valor_atual_posicao", 0)
-            tot_pl_nr += dados.get("lucro_nao_realizado", 0)
-            tot_pl_r  += dados.get("lucro_realizado", 0)
 
         while len(self._det_rows) > len(ord_port):
             linha_sobrando = self._det_rows.pop()
@@ -326,25 +350,40 @@ class JanelaDistribuicao(ctk.CTkFrame):
             if self._det_sel is linha_sobrando:
                 self._det_sel = None
 
-        tot_pl    = tot_pl_nr + tot_pl_r
-        pct_nr    = (tot_pl_nr / tot_custo * 100) if tot_custo > 0.000001 else 0
-        tot_comprado = portfolio.get("totais", {}).get("compras_historicas_usdt", 0)
-        pct_total = (tot_pl / tot_comprado * 100) if tot_comprado > 0.000001 else 0
-
-        cor_pl      = NEON_GREEN if tot_pl    >= 0 else NEON_RED
-        cor_nr      = NEON_GREEN if tot_pl_nr >= 0 else NEON_RED
-        cor_r       = NEON_GREEN if tot_pl_r  >= 0 else NEON_RED
-        cor_retorno = NEON_GREEN if pct_total >= 0 else NEON_RED
+        tot_custo = resumo.get("investido_liquido", 0)
+        tot_val = resumo.get("valor_atual")
+        tot_pl_nr = resumo.get("nao_realizado")
+        tot_pl_r = resumo.get("realizado", 0)
+        tot_pl = None if tot_pl_nr is None else tot_pl_nr + tot_pl_r
+        pct_nr = (
+            tot_pl_nr / tot_custo * 100 if tot_pl_nr is not None
+            and tot_custo > 0.000001 else None
+        )
+        tot_comprado = resumo.get("compras_historicas_usdt", 0)
+        pct_total = (
+            tot_pl / tot_comprado * 100
+            if tot_pl is not None and tot_comprado > 0.000001 else None
+        )
+        cor_pl = TEXT_MUTED if tot_pl is None else NEON_GREEN if tot_pl >= 0 else NEON_RED
+        cor_nr = TEXT_MUTED if tot_pl_nr is None else NEON_GREEN if tot_pl_nr >= 0 else NEON_RED
+        cor_r = NEON_GREEN if tot_pl_r >= 0 else NEON_RED
+        cor_retorno = TEXT_MUTED if pct_total is None else NEON_GREEN if pct_total >= 0 else NEON_RED
 
         self._lbl_patrimonio.configure(text=self._fmt_val(tot_val))
-        self._lbl_custo.configure(     text=self._fmt_val(tot_custo))
-        # Compras históricas: sempre em USDT, sem converter pelo câmbio atual.
+        self._lbl_custo.configure(text=self._fmt_val(tot_custo))
+        # Compras históricas: sempre USDT, sem câmbio atual aplicado retroativamente.
         self._lbl_compras_hist.configure(text=f"{tot_comprado:,.2f} USDT")
-        self._lbl_pl_nr.configure(     text=self._fmt_val(tot_pl_nr),  text_color=cor_nr)
-        self._lbl_pl_r.configure(      text=self._fmt_val(tot_pl_r),   text_color=cor_r)
-        self._lbl_pl.configure(        text=self._fmt_val(tot_pl),     text_color=cor_pl)
-        self._lbl_pct.configure(       text=f"{pct_nr:+.2f}%",         text_color=cor_nr)
-        self._lbl_retorno.configure(   text=f"{pct_total:+.2f}%",      text_color=cor_retorno)
+        self._lbl_pl_nr.configure(text=self._fmt_val(tot_pl_nr), text_color=cor_nr)
+        self._lbl_pl_r.configure(text=self._fmt_val(tot_pl_r), text_color=cor_r)
+        self._lbl_pl.configure(text=self._fmt_val(tot_pl), text_color=cor_pl)
+        self._lbl_pct.configure(
+            text=f"{pct_nr:+.2f}%" if pct_nr is not None else "Indisponível",
+            text_color=cor_nr,
+        )
+        self._lbl_retorno.configure(
+            text=f"{pct_total:+.2f}%" if pct_total is not None else "Indisponível",
+            text_color=cor_retorno,
+        )
 
         moedas_validas = [(m, d) for m, d in ord_port if m != "USDT (Caixa)" and d.get("lucro_total") is not None]
         if moedas_validas:
@@ -353,37 +392,41 @@ class JanelaDistribuicao(ctk.CTkFrame):
 
             def _pct_ativo(d):
                 c = d.get("custo_posicao_final", 0)
-                return (d.get("lucro_nao_realizado", 0) / c * 100) if c > 0.000001 else 0
+                pl_nr = d.get("lucro_nao_realizado")
+                return (pl_nr / c * 100) if c > 0.000001 and pl_nr is not None else None
 
-            self._lbl_melhor.configure(
-                text=f"{melhor[0]}  {self._fmt_val(melhor[1].get('lucro_total', 0))}  ({_pct_ativo(melhor[1]):+.1f}%)"
-            )
-            self._lbl_pior.configure(
-                text=f"{pior[0]}  {self._fmt_val(pior[1].get('lucro_total', 0))}  ({_pct_ativo(pior[1]):+.1f}%)"
-            )
+            def _legenda_ativo(item):
+                p = _pct_ativo(item[1])
+                percentual = f"{p:+.1f}%" if p is not None else "—"
+                return f"{item[0]}  {self._fmt_val(item[1]['lucro_total'])}  ({percentual})"
+            self._lbl_melhor.configure(text=_legenda_ativo(melhor))
+            self._lbl_pior.configure(text=_legenda_ativo(pior))
         else:
             self._lbl_melhor.configure(text="--")
             self._lbl_pior.configure(  text="--")
 
     def _inserir_detalhe(self, moeda: str, dados: dict, idx: int):
-        qtd     = dados.get("quantidade_final", 0)
-        pmc     = dados.get("pmc_final", 0)
-        custo   = dados.get("custo_posicao_final", 0)
-        p_mkt   = dados.get("preco_de_mercado", 0)
-        v_atual = dados.get("valor_atual_posicao", 0)
-        pl_nr   = dados.get("lucro_nao_realizado", 0)
-        pl_r    = dados.get("lucro_realizado", 0)
-        pl_tot  = dados.get("lucro_total", 0)
+        qtd = dados.get("quantidade_final", 0)
+        pmc = dados.get("pmc_final", 0)
+        custo = dados.get("custo_posicao_final", 0)
+        p_mkt = dados.get("preco_de_mercado")
+        v_atual = dados.get("valor_atual_posicao")
+        pl_nr = dados.get("lucro_nao_realizado")
+        pl_r = dados.get("lucro_realizado", 0)
+        pl_tot = dados.get("lucro_total")
         comprado_hist = dados.get("total_comprado_usdt", 0)
-        # Para posição encerrada, o percentual representa resultado realizado.
-        base_pct = (pl_nr / custo) if custo > 0.000001 else (
-            pl_r / comprado_hist if comprado_hist > 0.000001 else 0
-        )
-        str_pct = f"{base_pct * 100:+.2f}%"
+        if pl_nr is None:
+            str_pct = "Indisponível"
+        elif custo > 0.000001:
+            str_pct = f"{pl_nr / custo * 100:+.2f}%"
+        elif comprado_hist > 0.000001:
+            str_pct = f"{pl_r / comprado_hist * 100:+.2f}%"
+        else:
+            str_pct = "—"
         bg      = BG_CARD if idx % 2 == 0 else BG_DEEP
 
         if moeda == "USDT (Caixa)":
-            taxa = self._price_manager.preco_brl or 1.0
+            taxa = self._taxa_brl_valida
             if self.display_currency == "BRL":
                 pl = self._usdt_pl_brl
                 if pl and pl.get("pmc_brl", 0) > 0:
@@ -391,7 +434,7 @@ class JanelaDistribuicao(ctk.CTkFrame):
                         moeda,
                         f"{qtd:,.2f} USDT",
                         f"R${pl['pmc_brl']:,.4f}",
-                        f"R${taxa:,.4f}",
+                        f"R${taxa:,.4f}" if taxa is not None else "BRL indisponível",
                         f"R${pl['custo_posicao_brl']:,.2f}",
                         f"R${pl['valor_atual_brl']:,.2f}",
                         f"R${pl['lucro_nao_realizado_brl']:+,.2f}",
@@ -402,8 +445,10 @@ class JanelaDistribuicao(ctk.CTkFrame):
                     ]
                     pos = pl["lucro_total_brl"] >= 0
                 else:
-                    valores = [moeda, f"{qtd:,.2f} USDT", "N/A", f"R${taxa:,.4f}", "N/A",
-                               f"R${qtd * taxa:,.2f}", "N/A", "N/A", "N/A", "0.00%"]
+                    valores = [moeda, f"{qtd:,.2f} USDT", "N/A",
+                               f"R${taxa:,.4f}" if taxa is not None else "BRL indisponível",
+                               "N/A", f"R${qtd * taxa:,.2f}" if taxa is not None else "BRL indisponível",
+                               "N/A", "N/A", "N/A", "—"]
                     pos = True
             else:
                 valores = [moeda, f"{qtd:,.2f} USDT", "N/A", self._fmt_prc(1.0),
@@ -415,9 +460,9 @@ class JanelaDistribuicao(ctk.CTkFrame):
                 self._fmt_val(custo), self._fmt_val(v_atual), self._fmt_val(pl_nr),
                 self._fmt_val(pl_r), self._fmt_val(pl_tot), str_pct,
             ]
-            pos = pl_tot >= 0
+            pos = pl_tot is not None and pl_tot >= 0
 
-        cor_pl     = NEON_GREEN if pos else NEON_RED
+        cor_pl = TEXT_MUTED if pl_tot is None and moeda != "USDT (Caixa)" else NEON_GREEN if pos else NEON_RED
         _col_cores = [
             TEXT_PRIMARY, TEXT_SECONDARY, TEXT_MUTED, TEXT_MUTED,
             TEXT_SECONDARY, TEXT_PRIMARY, cor_pl, cor_pl, cor_pl, cor_pl,
