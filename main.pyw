@@ -20,6 +20,7 @@ from gui.janela_distribuicao import JanelaDistribuicao
 from gui.janela_registro_logica import JanelaRegistro
 from gui.janela_caixa import JanelaCaixa
 from gui.janela_moedas import JanelaMoedas
+from gui.janela_analise_periodo import JanelaAnalisePeriodo
 
 from config.tema_cripto import (
     aplicar_tema,
@@ -39,6 +40,7 @@ MOEDAS_SUPORTADAS = CONFIG["moedas"]
 
 ABAS = [
     ("📈  Dashboard Geral",      "aba_distribuicao"),
+    ("📊  Análise por Período",   "aba_analise"),
     ("💰  Caixa (USD/BRL)",         "aba_caixa"),
     ("✏️  Registrar Operação",   "aba_registro"),
     ("⚙️  Histórico e Edição",   "aba_edicao"),
@@ -139,6 +141,12 @@ class PortfolioDCA:
         )
         _embutir(self.aba_distribuicao)
 
+        self.aba_analise = JanelaAnalisePeriodo(
+            self.tabview.tab("📊  Análise por Período"),
+            self.data_manager,
+        )
+        _embutir(self.aba_analise)
+
         self.aba_caixa = JanelaCaixa(
             self.tabview.tab("💰  Caixa (USD/BRL)"),
             self.data_manager, self.price_manager, self.analysis_engine,
@@ -176,6 +184,7 @@ class PortfolioDCA:
     def _preencher_dados_iniciais(self):
         self.aba_caixa.atualizar()
         self.aba_distribuicao.atualizar()
+        self.aba_analise.atualizar()
         self.aba_edicao.atualizar()
 
     def _iniciar_atualizacoes_automaticas(self) -> None:
@@ -222,6 +231,7 @@ class PortfolioDCA:
     def _atualizar_abas_seguro(self):
         try:
             self.aba_distribuicao.atualizar()
+            self.aba_analise.atualizar()
             self.aba_caixa.atualizar()
             self._atualizar_status("✓ Atualizado!", NEON_GREEN)
         except Exception:
