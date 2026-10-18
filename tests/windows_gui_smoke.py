@@ -341,6 +341,43 @@ def main():
                 assert extrato.column(coluna)["minwidth"] >= 150
             print("GUI_UI01_CAIXA_COLUNAS_PRESERVADAS=PASS")
 
+            # OPS-01: startup does not perform a Binance request. Use
+            # the actual splash boot procedure without creating a second UI.
+            from backend.local_startup import abrir_carteira_local
+            from gui.janela_splash import JanelaSplash
+            from unittest.mock import patch
+            offline_manager = FakePriceManager()
+            offline_manager.atualizar_precos = lambda *_: (
+                (_ for _ in ()).throw(AssertionError("Network used during startup"))
+            )
+            local_db, price_no_net = abrir_carteira_local(
+                data_factory=lambda: dm,
+                price_factory=lambda: offline_manager,
+            )
+            assert local_db is dm and price_no_net is offline_manager
+            splash = object.__new__(JanelaSplash)
+            splash.sucesso = False
+            splash._erro = None
+            with patch("backend.local_startup.abrir_carteira_local", return_value=(dm, offline_manager)):
+                splash._carregar_dados()
+            assert splash.sucesso
+            assert splash._erro is None
+            print("GUI_OPS01_STARTUP_OFFLINE=PASS")
+
+            # OPS-01: repeated refresh requests must not start parallel
+            # workers or commit background results after window destruction.
+            assert app._refresh_lock.acquire(blocking=False)
+            try:
+                assert app.atualizar_todas_as_analises() is False
+            finally:
+                app._refresh_lock.release()
+            assert app._closing is False
+            app._on_closing()
+            assert app._closing and not app._countdown_ativo
+            assert app._after_id is None and app._initial_refresh_id is None
+            assert app.atualizar_todas_as_analises() is False
+            assert app._agendar_ui(lambda: 1 / 0) is False
+            print("GUI_OPS01_SEM_CONCORRENCIA_E_FECHAMENTO=PASS")
             print("GUI_INTEGRADA=PASS")
             print("MODULOS=SQLite+AnalysisEngine+AssetPeriodAnalytics+CustomTkinter")
             print("REGISTROS_MIGRADOS=" + str(dm._store.diagnostico_integridade()["operacoes_importadas"]))
