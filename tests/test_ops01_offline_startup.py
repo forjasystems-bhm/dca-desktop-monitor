@@ -110,6 +110,23 @@ class InicializacaoOffline(unittest.TestCase):
             self.abrir()
         self.assertEqual(db_path.read_bytes(), b"not-a-sqlite-database")
 
+    def test_network_failure_does_not_reuse_recent_cached_quotes(self):
+        from datetime import datetime, timezone
+        pm = PriceManager.__new__(PriceManager)
+        pm.exchange = None
+        pm.precos_cache = {"BTC": 100.0, "USDC": 0.98}
+        now = datetime.now(timezone.utc)
+        pm.cotacoes_atualizadas_em = {"BTC": now, "USDC": now}
+        pm.falhas_cotacao = set()
+        pm._brl_falhou = False
+        pm._brl_atualizado_em = now
+        pm.preco_brl = 5.25
+        self.assertEqual(pm.precos_para_avaliacao()["BTC"], 100.0)
+        pm.invalidar_cotacoes(["BTC", "USDC"])
+        self.assertEqual(pm.precos_para_avaliacao(), {"USDT": 1.0})
+        self.assertIsNone(pm.taxa_brl_para_avaliacao())
+        self.assertEqual(pm.precos_cache["BTC"], 100.0)
+
     def test_offline_changes_still_obey_financial_validators(self):
         dm, _ = self.abrir()
         self.assertFalse(dm.salvar_operacao([
