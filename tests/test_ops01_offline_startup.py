@@ -7,6 +7,7 @@ import unittest
 
 from backend.backend import DataManager, PriceManager, AnalysisEngine
 from backend.local_startup import abrir_carteira_local, FalhaInicializacaoLocal
+from backend.storage_sqlite import ErroMigracao
 
 
 class PriceManagerRedeProibida:
@@ -87,10 +88,16 @@ class InicializacaoOffline(unittest.TestCase):
         self.assertEqual(self.novo().carregar_operacoes_precisas(), before)
         backup = next((self.data_dir / "backups").glob("legado-*.csv"))
         backup.unlink()
-        with self.assertRaises(FalhaInicializacaoLocal):
+        with self.assertRaises((FalhaInicializacaoLocal, ErroMigracao)):
             self.abrir()
-        # Records remain stored, no overwrite or silent empty state.
-        self.assertEqual(self.novo().carregar_operacoes_precisas(), before)
+        # Source CSV and SQLite records remain byte-preserved. No backup
+        # silently regenerated; only an explicit restoration may unblock.
+        self.assertFalse(backup.exists())
+        self.assertEqual(self.csv.read_bytes(), raw)
+        with sqlite3.connect(dm.arquivo_db) as conn:
+            self.assertEqual(
+                conn.execute("SELECT COUNT(*) FROM operacoes").fetchone()[0], 2
+            )
 
     def test_sqlite_corruption_never_displays_empty_portfolio_as_success(self):
         dm, _ = self.abrir()
