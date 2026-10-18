@@ -46,6 +46,7 @@ def calcular_analise_por_periodo(
     inicio: str | date | None = None,
     fim: str | date | None = None,
     saldos_iniciais: list[dict] | None = None,
+    saldos_externos: list[dict] | None = None,
 ) -> dict[str, Any]:
     """Usa custo médio móvel, histórico integral até o fim e movimentos do intervalo.
 
@@ -186,6 +187,28 @@ def calcular_analise_por_periodo(
                 s["realizado_periodo"] += realizado
                 s["operacoes_periodo"] += 1
 
+    # Outside-CSV balances take effect at their attested snapshot dates.
+    # They never enter the historical trade replay, and never become buys.
+    has_external = False
+    for lot in saldos_externos or []:
+        ref = date.fromisoformat(str(lot["Data"])[:10])
+        if data_fim is not None and ref > data_fim:
+            continue
+        has_external = True
+        coin = str(lot["Moeda"]).upper()
+        units = Decimal(str(lot["Quantidade"]))
+        documented = lot.get("Custo_Total_USDT")
+        if coin == "USDT":
+            saldo_usdt_inicial += units
+        elif coin == "USDC":
+            saldo_usdc += units
+        else:
+            assets = ativos[coin]
+            assets["quantidade"] += units
+            if documented is None or str(documented).strip() == "":
+                bases_desconhecidas.add(coin)
+            else:
+                assets["custo_aberto"] += Decimal(str(documented))
     totais = {campo: ZERO if campo != "operacoes_periodo" else 0 for campo in campos}
     for estado_moeda in ativos.values():
         for campo in campos:
@@ -202,6 +225,7 @@ def calcular_analise_por_periodo(
         "saidas_periodo_usdc": saidas_usdc,
         "saldo_usdc": saldo_usdc,
         "saldo_usdt_inicial": saldo_usdt_inicial,
+        "saldos_externos_declarados": has_external,
         "base_de_custo_incompleta": bool(bases_desconhecidas or saldo_usdc > 0),
         "ativos_sem_custo": sorted(bases_desconhecidas),
         "taxas_registradas_usdt": taxas_conhecidas,
