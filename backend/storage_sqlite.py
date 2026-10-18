@@ -209,7 +209,7 @@ class ArmazemSQLite:
                         )
                     con.execute("COMMIT")
                     return 0
-                raise ErroMigracao("Já existe importação diferente; não misturar dados.")
+                raise ErroMigracao("CSV legado alterado ou origem distinta após migração; não misturar dados.")
             if con.execute("SELECT COUNT(*) FROM operacoes").fetchone()[0]:
                 raise ErroMigracao("Banco contém operações; importação automática proibida.")
             backup = _backup(dados, self.diretorio / "backups", sha)
