@@ -99,7 +99,7 @@ class StablecoinsTests(unittest.TestCase):
         self.assertFalse(self.dm.salvar_operacao(
             op(D1, "USDC", "compra", "100", "5", "99")
         ))
-        self.assertIn("Quantidade igual ao Valor_USDT", self.dm.ultimo_erro)
+        self.assertIn("Quantidade igual a Valor_USDT", self.dm.ultimo_erro)
         self.assertTrue(self.depositar("USDC", "100"))
         p = AnalysisEngine.calcular_portfolio(self.dm.carregar_operacoes(), {"USDC": 0.97})
         self.assertAlmostEqual(p["totais"]["valor_atual"], 97)
