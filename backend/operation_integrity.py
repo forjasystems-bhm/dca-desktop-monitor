@@ -51,6 +51,11 @@ def validar_campos(registro: dict, linha: int) -> None:
     preco = _numero(registro, "Preco", linha)
     quantidade = _numero(registro, "Quantidade", linha)
     _numero(registro, "Taxa_BRL", linha, positivo=False)
+    from backend.trading_fees import taxa_da_operacao, ErroTaxaOperacional
+    try:
+        taxa_da_operacao(registro)
+    except ErroTaxaOperacional as exc:
+        raise ErroIntegridadeFinanceira(f"Operação {linha}: {exc}") from exc
 
     if moeda in ("USDT", "USDC"):
         # Transferência externa; Preco é o câmbio BRL da moeda informada,
@@ -99,6 +104,8 @@ def validar_livro(operacoes: list[dict]) -> None:
         tipo = str(op["Operacao"]).strip().lower()
         valor = Decimal(str(op["Valor_USDT"]))
         qtd = Decimal(str(op["Quantidade"]))
+        from backend.trading_fees import taxa_da_operacao
+        taxa = taxa_da_operacao(op)
         if moeda == "USDT":
             caixa += qtd if tipo == "compra" else -qtd
         elif moeda == "USDC":
@@ -110,7 +117,7 @@ def validar_livro(operacoes: list[dict]) -> None:
                     "Depósitos USDC não são aportes USDT; concilie a origem."
                 )
         elif tipo == "compra":
-            caixa -= valor
+            caixa -= valor + taxa
             posicoes[moeda] += qtd
         else:
             posicoes[moeda] -= qtd
@@ -119,7 +126,7 @@ def validar_livro(operacoes: list[dict]) -> None:
                     f"Operação {indice} ({moeda}, {op['Data']}): "
                     "venda superior à posição disponível nessa data."
                 )
-            caixa += valor
+            caixa += valor - taxa
         if caixa < ZERO:
             raise ErroIntegridadeFinanceira(
                 f"Operação {indice} ({moeda}, {op['Data']}): "
