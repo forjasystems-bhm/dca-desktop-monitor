@@ -428,6 +428,7 @@ class JanelaAnalisePeriodo(ctk.CTkFrame):
             model = calcular_analise_por_periodo(
                 self._dados.carregar_operacoes_precisas(), fim=dia,
                 saldos_iniciais=self._dados.carregar_posicoes_iniciais(),
+                saldos_externos=self._dados.carregar_posicoes_externas(),
             )
             ativos_abertos = [
                 nome for nome, valores in model["ativos"].items()
@@ -514,6 +515,7 @@ class JanelaAnalisePeriodo(ctk.CTkFrame):
                  if hasattr(self._dados, "carregar_operacoes_precisas")
                  else self._dados.carregar_operacoes()), inicio, fim,
                 saldos_iniciais=self._dados.carregar_posicoes_iniciais(),
+                saldos_externos=self._dados.carregar_posicoes_externas(),
             )
             itens = ["Todos os ativos", *self._analise["ativos"].keys()]
             self._ativos.configure(values=itens)
