@@ -53,6 +53,19 @@ def main():
             "capturado_em_utc": datetime.now(timezone.utc).isoformat(),
         }])
 
+        # FIN-03: a mesma instância usada pela GUI recusa a venda de
+        # BTC já encerrado e mantém todos os registros do banco.
+        anterior = dm.carregar_operacoes_precisas()
+        assert not dm.salvar_operacao([
+            "2026-10-01 09:00:00", "BTC", "venda", "200", "20000", "0.01", "5",
+        ])
+        assert "venda superior" in dm.ultimo_erro
+        assert dm.carregar_operacoes_precisas() == anterior
+        assert not dm.excluir_operacao(0), "Remover o aporte deve invalidar compras."
+        assert "saldo USDT negativo" in dm.ultimo_erro
+        assert dm.carregar_operacoes_precisas() == anterior
+        print("GUI_FIN03_VALIDACAO_E_ROLLBACK=PASS")
+
         entry = runpy.run_path(str(projeto / "main.pyw"), run_name="dca_gui_smoke")
         root = ctk.CTk()
         try:
