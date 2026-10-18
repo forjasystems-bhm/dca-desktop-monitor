@@ -1,0 +1,60 @@
+name: Windows preview (manual review)
+
+on:
+  pull_request:
+    paths:
+      - 'backend/**'
+      - 'config/**'
+      - 'db/**'
+      - 'gui/**'
+      - 'img/**'
+      - 'main.pyw'
+      - 'requirements.txt'
+      - 'tests/**'
+      - '.github/workflows/windows-preview.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  portable-preview:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout proposed code
+        uses: actions/checkout@v4
+      - name: Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt pyinstaller
+      - name: Financial tests
+        run: python -m unittest discover -s tests -v
+      - name: Build portable Windows preview
+        shell: pwsh
+        run: |
+          python -m PyInstaller --noconfirm --clean --onedir --windowed --name DCA-Preview --collect-all customtkinter --add-data "config;config" --add-data "img;img" --add-data "db;db" main.pyw
+          $app = "dist/DCA-Preview"
+          if (!(Test-Path "$app/DCA-Preview.exe")) { throw "Executable not found" }
+          $dataDir = "$app/_internal/db"
+          New-Item -ItemType Directory -Force -Path $dataDir | Out-Null
+          Copy-Item "tests/fixtures/preview_operacoes.csv" "$dataDir/meu_diario_operacoes.csv" -Force
+          $configPath = "$app/_internal/config/config.json"
+          $settings = Get-Content $configPath -Raw | ConvertFrom-Json
+          $settings.moedas = @("BTC", "ETH", "SOL", "LINK", "USDT")
+          $settings.intervalo_atualizacao = 60
+          $settings.splash_timeout = 90
+          $settings | ConvertTo-Json -Depth 10 | Set-Content $configPath -Encoding utf8
+          Copy-Item "docs/COMO_TESTAR_PREVIEW.txt" "$app/LEIA-ME-ANTES-DE-ABRIR.txt"
+          if (!(Test-Path "$dataDir/meu_diario_operacoes.csv")) { throw "Demo CSV not packaged" }
+      - name: Upload temporary Windows preview
+        uses: actions/upload-artifact@v4
+        with:
+          name: DCA-Preview-PR1-Windows
+          path: dist/DCA-Preview/
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 6

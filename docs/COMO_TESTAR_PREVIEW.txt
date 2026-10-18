@@ -1,0 +1,31 @@
+DCA DESKTOP MONITOR — PREVIEW PR #1
+================================
+
+VERSAO DE AVALIACAO (DADOS TOTALMENTE FICTICIOS)
+
+1. Extraia o ZIP integralmente em uma pasta nova.
+2. Execute DCA-Preview.exe dentro dessa pasta.
+3. A demonstracao utiliza registros FICTICIOS pre-carregados.
+
+O QUE CONFERIR NO PAINEL
+- BTC: posicao zerada (0 BTC), mas lucro realizado de +300 USDT.
+- SOL: posicao zerada (0 SOL), mas prejuizo realizado de -20 USDT.
+- LINK: posicao zerada (0 LINK), mas permanece no historico mesmo com resultado zero.
+- ETH: posicao de 0,5 ETH aberta. Seu valor atual varia com a cotacao da Binance.
+- Compras Historicas: 1.750 USDT (BTC 1000 + ETH 600 + SOL 100 + LINK 50).
+- Lucro realizado em ativos: +280 USDT antes de taxas (BTC 300 - SOL 20).
+- Caixa final esperado: 1.680 USDT, considerando compras e vendas acima.
+
+ATENCAO
+- NAO e instalador, release ou atualizacao do software existente.
+- NAO copie arquivos deste teste sobre sua instalacao atual.
+- Os dados desta demonstracao ficam dentro da propria pasta extraida, em _internal/db/.
+- A cotacao atual pode variar ou nao estar disponivel. A prova do lucro realizado
+  de BTC e SOL independe da conexao de mercado.
+- A interface ainda nao foi homologada em uma estacao Windows real do usuario.
+- Fechar, remover a pasta demo e extrair novamente restaura os dados ficticios originais.
+- Ainda nao ha assistente de importacao segura do CSV pessoal nem atualizacao automatica.
+- Caso o Windows mostre um alerta de editor desconhecido, nao significa que o executavel
+  foi assinado digitalmente; o projeto ainda nao possui certificado de assinatura.
+
+Fonte: https://github.com/tiolusystems/dca-desktop-monitor/pull/1
