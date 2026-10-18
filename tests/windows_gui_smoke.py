@@ -366,11 +366,15 @@ def main():
 
             # OPS-01: repeated refresh requests must not start parallel
             # workers or commit background results after window destruction.
-            assert app._refresh_lock.acquire(blocking=False)
+            # A atualização inicial pode já estar ativa neste ponto,
+            # conforme o escalonamento da thread Windows. Ambas as situações
+            # devem rejeitar a segunda atualização.
+            acquired = app._refresh_lock.acquire(blocking=False)
             try:
                 assert app.atualizar_todas_as_analises() is False
             finally:
-                app._refresh_lock.release()
+                if acquired:
+                    app._refresh_lock.release()
             assert app._closing is False
             app._on_closing()
             assert app._closing and not app._countdown_ativo
