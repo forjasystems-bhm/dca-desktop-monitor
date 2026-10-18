@@ -336,7 +336,7 @@ class ArmazemSQLite:
                 "banco": str(self.arquivo_db)}
 
     def informar_custo_inicial(self, moeda: str, custodia: str,
-                              custo_total_usdt: str) -> None:
+                              custo_total_usdt: str) -> dict:
         try:
             custo = Decimal(str(custo_total_usdt))
         except (InvalidOperation, ValueError, TypeError) as exc:
@@ -363,6 +363,18 @@ class ArmazemSQLite:
             raise
         finally:
             con.close()
+
+        try:
+            from backend.backup_sqlite import criar_backup_sqlite
+            snapshot = criar_backup_sqlite(
+                self.arquivo_db, self.diretorio / "backups" / "sqlite",
+                motivo="depois_custo_inicial",
+            )
+            return {"gravado": True, "backup_sqlite": snapshot["manifesto"],
+                    "aviso_backup_sqlite": None}
+        except Exception as exc:
+            return {"gravado": True, "backup_sqlite": None,
+                    "aviso_backup_sqlite": "Custo registrado, mas backup falhou: " + str(exc)}
 
     def listar_posicoes_iniciais(self) -> list[dict]:
         self._conferir_origem()
