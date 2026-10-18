@@ -52,20 +52,15 @@ def validar_campos(registro: dict, linha: int) -> None:
     quantidade = _numero(registro, "Quantidade", linha)
     _numero(registro, "Taxa_BRL", linha, positivo=False)
 
-    if moeda == "USDT":
-        # Registro de depósito/saque de USDT: Preco contém USDT/BRL.
+    if moeda in ("USDT", "USDC"):
+        # Transferência externa; Preco é o câmbio BRL da moeda informada,
+        # nunca preço USDT de USDC. Valor_USDT é nominal legado para USDC.
         if abs(quantidade - valor) > TOL_QUANTIDADE:
             raise ErroIntegridadeFinanceira(
-                f"Operação {linha}: USDT exige Quantidade igual a Valor_USDT. "
-                "Preço é a cotação USDT/BRL, não se multiplica pela quantidade."
+                f"Operação {linha}: {moeda} exige Quantidade igual ao Valor_USDT "
+                "nominal de transferência. Preço é cotação BRL informada, "
+                "não uma conversão USDC/USDT."
             )
-    elif moeda == "USDC":
-        # Cadastro legado é aceito em modo de leitura, mas o modelo de
-        # compensação USDC exige uma decisão explícita na FIN-04.
-        raise ErroIntegridadeFinanceira(
-            f"Operação {linha}: novas alterações em USDC aguardam "
-            "a regra contábil FIN-04. Operações históricas permanecem preservadas."
-        )
     else:
         # A UI arredonda a quantidade; tolera apenas 1 centavo ou
         # o efeito máximo de arredondar 8 casas decimais.
@@ -97,6 +92,7 @@ def validar_livro(operacoes: list[dict]) -> None:
     registros.sort(key=lambda x: (x[0], x[1]))
 
     caixa = ZERO
+    caixa_usdc = ZERO
     posicoes = defaultdict(lambda: ZERO)
     for _, indice, op in registros:
         moeda = str(op["Moeda"]).strip().upper()
@@ -104,7 +100,15 @@ def validar_livro(operacoes: list[dict]) -> None:
         valor = Decimal(str(op["Valor_USDT"]))
         qtd = Decimal(str(op["Quantidade"]))
         if moeda == "USDT":
-            caixa += valor if tipo == "compra" else -valor
+            caixa += qtd if tipo == "compra" else -qtd
+        elif moeda == "USDC":
+            caixa_usdc += qtd if tipo == "compra" else -qtd
+            if caixa_usdc < ZERO:
+                raise ErroIntegridadeFinanceira(
+                    f"Operação {indice} (USDC, {op['Data']}): "
+                    f"saldo USDC negativo ({caixa_usdc}). "
+                    "Depósitos USDC não são aportes USDT; concilie a origem."
+                )
         elif tipo == "compra":
             caixa -= valor
             posicoes[moeda] += qtd
