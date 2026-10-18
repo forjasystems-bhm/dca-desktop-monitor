@@ -9,7 +9,7 @@ from pathlib import Path
 import sqlite3
 import sys
 import tempfile
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
 
 COLUNAS = ("Data", "Moeda", "Operacao", "Valor_USDT", "Preco", "Quantidade", "Taxa_BRL")
@@ -328,12 +328,12 @@ class ArmazemSQLite:
                 if not preco.is_finite() or preco <= 0:
                     raise ValueError("preço não positivo/finito")
                 esperado_ms = int(datetime.combine(
-                    dia, datetime.min.time(), __import__("datetime").timezone.utc
+                    dia, datetime.min.time(), timezone.utc
                 ).timestamp() * 1000)
                 if r["abertura_utc_ms"] != esperado_ms:
                     raise ValueError("instante do candle não corresponde à data")
                 origem = datetime.fromisoformat(r["capturado_em_utc"])
-                if origem.tzinfo is None or origem.utcoffset() is None:
+                if origem.tzinfo is None or origem.utcoffset() != timedelta(0):
                     raise ValueError("captura sem fuso horário")
             except (KeyError, ValueError, TypeError, InvalidOperation, OverflowError) as exc:
                 raise ErroCotacaoHistorica(f"Registro histórico inválido: {exc}") from exc
@@ -343,6 +343,7 @@ class ArmazemSQLite:
             ))
         if not checados:
             return 0
+        self._conferir_origem()
         con = self._conectar()
         inseridos = 0
         try:
