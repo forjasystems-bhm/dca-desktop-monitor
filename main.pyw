@@ -340,6 +340,14 @@ class PortfolioDCA:
                 )
             except Exception as exc:
                 logger.exception("Falha não fatal no ciclo de atualização: %s", exc)
+                # Uma falha sistêmica inesperada não pode deixar preços
+                # antigos, ainda recentes, parecerem confirmados pela Binance.
+                invalidar = getattr(self.price_manager, "invalidar_cotacoes", None)
+                if callable(invalidar):
+                    try:
+                        invalidar(list(MOEDAS_SUPORTADAS) + ["USDC"])
+                    except Exception:
+                        logger.exception("Falha ao invalidar cotações")
                 if not self._closing:
                     self._agendar_ui(
                         lambda: self._atualizar_abas_seguro(False)
