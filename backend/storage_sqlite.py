@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import csv
 import hashlib
+import json
 import io
 import os
 from pathlib import Path
@@ -143,11 +144,11 @@ class ArmazemSQLite:
         if self.arquivo_db.is_file() and self.arquivo_db.stat().st_size:
             with closing(sqlite3.connect(self.arquivo_db.as_uri() + "?mode=ro", uri=True)) as verify:
                 version = verify.execute("PRAGMA user_version").fetchone()[0]
-            if version < 4:
+            if version < 5:
                 from backend.backup_sqlite import criar_backup_sqlite
                 criar_backup_sqlite(
                     self.arquivo_db, self.diretorio / "backups" / "sqlite",
-                    motivo=f"antes_schema_v{version}_para_v4",
+                    motivo=f"antes_schema_v{version}_para_v5",
                 )
         conn = self._conectar()
         try:
@@ -185,7 +186,28 @@ class ArmazemSQLite:
                 criado_em_utc TEXT NOT NULL,
                 UNIQUE(moeda, custodia)
             )""")
-            conn.execute("PRAGMA user_version=4")
+            conn.execute("""CREATE TABLE IF NOT EXISTS posicoes_externas (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                data_posicao TEXT NOT NULL,
+                moeda TEXT NOT NULL,
+                quantidade TEXT NOT NULL,
+                custodia TEXT NOT NULL,
+                custo_total_usdt TEXT,
+                observacao TEXT NOT NULL DEFAULT '',
+                confirmacao_independente TEXT NOT NULL,
+                criado_em_utc TEXT NOT NULL,
+                UNIQUE(moeda, custodia)
+            )""")
+            conn.execute("""CREATE TABLE IF NOT EXISTS ajustes_posicoes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                tabela_origem TEXT NOT NULL,
+                id_posicao INTEGER NOT NULL,
+                antes_json TEXT NOT NULL,
+                depois_json TEXT NOT NULL,
+                motivo TEXT NOT NULL,
+                alterado_em_utc TEXT NOT NULL
+            )""")
+            conn.execute("PRAGMA user_version=5")
         finally:
             conn.close()
 
@@ -253,7 +275,8 @@ class ArmazemSQLite:
                     return 0
                 raise ErroMigracao("CSV legado diferente do registrado (alterado ou origem distinta); não misturar dados.")
             if (con.execute("SELECT COUNT(*) FROM operacoes").fetchone()[0]
-                or con.execute("SELECT COUNT(*) FROM posicoes_iniciais").fetchone()[0]):
+                or con.execute("SELECT COUNT(*) FROM posicoes_iniciais").fetchone()[0]
+                or con.execute("SELECT COUNT(*) FROM posicoes_externas").fetchone()[0]):
                 raise ErroMigracao(
                     "Banco contém operações ou saldos iniciais; "
                     "não misturar migração CSV com outro ponto de partida."
@@ -285,7 +308,10 @@ class ArmazemSQLite:
         con = self._conectar()
         try:
             usadas = con.execute("SELECT COUNT(*) FROM operacoes").fetchone()[0]
-            abertas = con.execute("SELECT COUNT(*) FROM posicoes_iniciais").fetchone()[0]
+            abertas = con.execute(
+                "SELECT (SELECT COUNT(*) FROM posicoes_iniciais) + "
+                "(SELECT COUNT(*) FROM posicoes_externas)"
+            ).fetchone()[0]
             migrado = con.execute(
                 "SELECT sha256 FROM importacoes_legadas LIMIT 1"
             ).fetchone()
@@ -376,6 +402,206 @@ class ArmazemSQLite:
             return {"gravado": True, "backup_sqlite": None,
                     "aviso_backup_sqlite": "Custo registrado, mas backup falhou: " + str(exc)}
 
+    @staticmethod
+    def _validar_lote(moeda, quantidade, custodia, data_posicao, custo_total_usdt):
+        ativo = str(moeda).strip().upper()
+        local = str(custodia).strip()
+        if not (2 <= len(ativo) <= 12 and ativo.isascii() and ativo.isalnum()):
+            raise ErroArmazenamento("Código de ativo inválido.")
+        if not local or len(local) > 80:
+            raise ErroArmazenamento("Custódia precisa ter entre 1 e 80 caracteres.")
+        try:
+            data = datetime.strptime(str(data_posicao), "%Y-%m-%d").date()
+            if data > datetime.now(timezone.utc).date():
+                raise ValueError("future")
+            qtd = Decimal(str(quantidade))
+            custo = (None if custo_total_usdt is None
+                     or str(custo_total_usdt).strip() == ""
+                     else Decimal(str(custo_total_usdt)))
+        except (InvalidOperation, ValueError, TypeError) as exc:
+            raise ErroArmazenamento("Data, quantidade ou custo inválido.") from exc
+        if not qtd.is_finite() or qtd <= 0:
+            raise ErroArmazenamento("Quantidade deve ser finita e positiva.")
+        if custo is not None and (not custo.is_finite() or custo <= 0):
+            raise ErroArmazenamento("Custo deve ser positivo ou não informado.")
+        return ativo, str(qtd), local, data.isoformat(), (
+            str(custo) if custo is not None else None
+        )
+
+    def listar_posicoes_externas(self) -> list[dict]:
+        """Saldos comprovadamente FORA do CSV; nunca participam de vendas do livro."""
+        self._conferir_origem()
+        con = self._conectar()
+        try:
+            rows = con.execute(
+                "SELECT id,data_posicao,moeda,quantidade,custodia,"
+                "custo_total_usdt,observacao,confirmacao_independente "
+                "FROM posicoes_externas ORDER BY id"
+            ).fetchall()
+        finally:
+            con.close()
+        return [dict(zip(
+            ("ID","Data","Moeda","Quantidade","Custodia","Custo_Total_USDT",
+             "Observacao","Declaracao_Independente"), row,
+        )) for row in rows]
+
+    def registrar_posicao_externa(
+        self, *, moeda: str, quantidade: str, custodia: str,
+        data_posicao: str, custo_total_usdt: str | None = None,
+        confirmacao_independente: bool = False, observacao: str = "",
+    ) -> dict:
+        """Apenas saldo adicional e declarado NÃO incluído no histórico."""
+        if confirmacao_independente is not True:
+            raise ErroArmazenamento(
+                "Confirme que esta posição NÃO está incluída no CSV nem "
+                "em outro saldo cadastrado. Não consolidar automaticamente."
+            )
+        ativo,qtd,local,data,custo = self._validar_lote(
+            moeda, quantidade, custodia, data_posicao, custo_total_usdt
+        )
+        if len(observacao) > 500:
+            raise ErroArmazenamento("Observação excede 500 caracteres.")
+        self._conferir_origem()
+        con = self._conectar()
+        try:
+            con.execute("BEGIN IMMEDIATE")
+            ultima = con.execute(
+                "SELECT MAX(substr(data,1,10)) FROM operacoes"
+            ).fetchone()[0]
+            if ultima is not None and data < ultima:
+                raise ErroArmazenamento(
+                    "Data do saldo externo antecede operações do CSV. "
+                    "Use uma data de conferência posterior ao histórico."
+                )
+            if con.execute(
+                "SELECT COUNT(*) FROM posicoes_iniciais "
+                "WHERE moeda=? AND custodia=?", (ativo,local)
+            ).fetchone()[0]:
+                raise ErroArmazenamento("Mesmo ativo e custódia já têm saldo inicial.")
+            con.execute(
+                "INSERT INTO posicoes_externas "
+                "(data_posicao,moeda,quantidade,custodia,custo_total_usdt,"
+                "observacao,confirmacao_independente,criado_em_utc) "
+                "VALUES (?,?,?,?,?,?,?,?)",
+                (data,ativo,qtd,local,custo,observacao,
+                 "DECLARADO_FORA_DO_CSV",datetime.now(timezone.utc).isoformat())
+            )
+            con.execute("COMMIT")
+        except sqlite3.IntegrityError as exc:
+            if con.in_transaction:
+                con.execute("ROLLBACK")
+            raise ErroArmazenamento(
+                "Posição externa já cadastrada nesta custódia. "
+                "Corrija o registro existente, não duplique."
+            ) from exc
+        except Exception:
+            if con.in_transaction:
+                con.execute("ROLLBACK")
+            raise
+        finally:
+            con.close()
+        from backend.backup_sqlite import criar_backup_sqlite
+        try:
+            snap = criar_backup_sqlite(
+                self.arquivo_db,self.diretorio/"backups"/"sqlite",
+                motivo="depois_conciliacao_externa",
+            )
+            aviso, manifest = None, snap["manifesto"]
+        except Exception as exc:
+            aviso, manifest = "Saldo salvo; backup SQLite falhou: "+str(exc), None
+        return {"moeda":ativo,"quantidade":qtd,"custodia":local,
+                "custo_total_usdt":custo,"backup_sqlite":manifest,
+                "aviso_backup_sqlite":aviso}
+
+    def corrigir_posicao(
+        self, *, origem: str, moeda: str, custodia: str,
+        quantidade: str, custo_total_usdt: str | None,
+        motivo: str,
+    ) -> dict:
+        """Mutação auditada com motivo e estado antes/depois na MESMA transação."""
+        tabela = {"inicial":"posicoes_iniciais",
+                  "externa":"posicoes_externas"}.get(origem)
+        if tabela is None:
+            raise ErroArmazenamento("Tipo de saldo inválido.")
+        justificativa = motivo.strip()
+        if len(justificativa) < 8 or len(justificativa) > 500:
+            raise ErroArmazenamento("Descreva a correção (8 a 500 caracteres).")
+        ativo,qtd,local,_,custo = self._validar_lote(
+            moeda, quantidade, custodia,
+            datetime.now(timezone.utc).date().isoformat(),
+            custo_total_usdt,
+        )
+        from backend.backup_sqlite import criar_backup_sqlite
+        # Before ANY edit, snapshot immutable and verified; no silent recovery.
+        anterior = criar_backup_sqlite(
+            self.arquivo_db, self.diretorio/"backups"/"sqlite",
+            motivo="antes_corrigir_posicao",
+        )
+        self._conferir_origem()
+        con = self._conectar()
+        try:
+            con.execute("BEGIN IMMEDIATE")
+            row = con.execute(
+                f"SELECT id,data_posicao,moeda,quantidade,custodia,"
+                f"custo_total_usdt,observacao FROM {tabela} "
+                "WHERE moeda=? AND custodia=?", (ativo,local),
+            ).fetchone()
+            if row is None:
+                raise ErroArmazenamento("Saldo não encontrado para corrigir.")
+            keys=("id","Data","Moeda","Quantidade","Custodia","Custo_Total_USDT","Observacao")
+            antes=dict(zip(keys,row))
+            depois=dict(antes,Quantidade=qtd,Custo_Total_USDT=custo)
+            if antes == depois:
+                raise ErroArmazenamento("Valores iguais: nenhuma correção necessária.")
+            con.execute(
+                f"UPDATE {tabela} SET quantidade=?,custo_total_usdt=? WHERE id=?",
+                (qtd,custo,row[0]),
+            )
+            if origem=="inicial":
+                from backend.operation_integrity import validar_livro
+                validar_livro(
+                    self._livro_transacional(con), self._saldos_transacionais(con)
+                )
+            con.execute(
+                "INSERT INTO ajustes_posicoes "
+                "(tabela_origem,id_posicao,antes_json,depois_json,motivo,alterado_em_utc) "
+                "VALUES (?,?,?,?,?,?)",
+                (origem,row[0],json.dumps(antes,ensure_ascii=False),
+                 json.dumps(depois,ensure_ascii=False),
+                 justificativa,datetime.now(timezone.utc).isoformat())
+            )
+            con.execute("COMMIT")
+        except Exception:
+            if con.in_transaction:
+                con.execute("ROLLBACK")
+            raise
+        finally:
+            con.close()
+        try:
+            snap = criar_backup_sqlite(
+                self.arquivo_db,self.diretorio/"backups"/"sqlite",
+                motivo="depois_corrigir_posicao",
+            )
+            aviso,manifest=None,snap["manifesto"]
+        except Exception as exc:
+            aviso,manifest="Correção gravada, backup posterior falhou: "+str(exc),None
+        return {"antes":antes,"depois":depois,"motivo":justificativa,
+                "backup_antes":anterior["manifesto"],
+                "backup_depois":manifest,"aviso_backup_sqlite":aviso}
+
+    def listar_auditoria_posicoes(self) -> list[dict]:
+        con = self._conectar()
+        try:
+            rows = con.execute(
+                "SELECT tabela_origem,id_posicao,antes_json,depois_json,"
+                "motivo,alterado_em_utc FROM ajustes_posicoes ORDER BY id"
+            ).fetchall()
+        finally:
+            con.close()
+        return [{"origem":r[0],"id_posicao":r[1],
+                 "antes":json.loads(r[2]),"depois":json.loads(r[3]),
+                 "motivo":r[4],"timestamp":r[5]} for r in rows]
+
     def listar_posicoes_iniciais(self) -> list[dict]:
         self._conferir_origem()
         con = self._conectar()
@@ -431,6 +657,11 @@ class ArmazemSQLite:
                 raise ErroArmazenamento(
                     "Saldo inicial somente antes do primeiro lançamento. "
                     "Não inventar compras para conciliar operações antigas."
+                )
+            if con.execute("SELECT COUNT(*) FROM posicoes_externas").fetchone()[0]:
+                raise ErroArmazenamento(
+                    "Já há posição externa: cadastro inicial separado requer "
+                    "conciliação antes de alterar a origem."
                 )
             if con.execute("SELECT COUNT(*) FROM importacoes_legadas").fetchone()[0]:
                 raise ErroArmazenamento(
