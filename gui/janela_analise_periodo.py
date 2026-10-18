@@ -1,5 +1,6 @@
 """Consulta histórica por ativo e consolidada (somente dados demonstráveis)."""
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
+import threading
 from decimal import Decimal
 import tkinter as tk
 from tkinter import ttk, messagebox
@@ -9,6 +10,8 @@ import customtkinter as ctk
 from backend.finance_analytics import (
     ErroAnaliseFinanceira, calcular_analise_por_periodo
 )
+from backend.historical_valuation import patrimonio_historico_na_data
+from backend.historical_prices import buscar_e_persistir_fechamentos, validar_data_encerrada
 from config.tema_cripto import (
     BG_CARD, BG_DEEP, BG_SURFACE, CYAN, NEON_GREEN, NEON_RED,
     TEXT_PRIMARY, TEXT_SECONDARY, BORDER,
@@ -42,6 +45,7 @@ class JanelaAnalisePeriodo(ctk.CTkFrame):
         self._filtro_periodo = ctk.StringVar(value="Todo o histórico")
         self._filtro_ativo = ctk.StringVar(value="Todos os ativos")
         self._indicadores = {}
+        self._busca_historica_ativa = False
         self._construir()
         self.after(150, self.atualizar)
 
@@ -64,7 +68,7 @@ class JanelaAnalisePeriodo(ctk.CTkFrame):
         ctk.CTkLabel(
             titulo,
             text="Compras, vendas, custo em aberto e resultado realizado · USDT"
-                 " · Sem estimativas de cotações passadas",
+                 " · Fechamentos passados apenas quando registrados no banco",
             text_color=TEXT_SECONDARY,
             font=ctk.CTkFont("Segoe UI", 12)
         ).pack(anchor="w", padx=18, pady=(0, 12))
@@ -93,6 +97,7 @@ class JanelaAnalisePeriodo(ctk.CTkFrame):
             filtros, text="Aplicar", width=90, command=self.atualizar
         ).grid(row=1, column=4, padx=(5, 12), pady=(2, 10))
         self._on_periodo("Todo o histórico", recarregar=False)
+        self._montar_avaliacao_historica()
 
         cards = ctk.CTkFrame(self, fg_color="transparent")
         cards.pack(fill="x", padx=12, pady=6)
@@ -173,6 +178,153 @@ class JanelaAnalisePeriodo(ctk.CTkFrame):
             wraplength=1200
         )
         self._status.pack(fill="x", padx=22, pady=(2, 10))
+
+    def _montar_avaliacao_historica(self):
+        """Área histórica independente dos valores de mercado atuais."""
+        frame = ctk.CTkFrame(self, fg_color=BG_CARD, border_color=BORDER,
+                             border_width=1, corner_radius=8)
+        frame.pack(fill="x", padx=12, pady=(0, 6))
+        ctk.CTkLabel(
+            frame, text="PATRIMÔNIO NA DATA (FECHAMENTO UTC · USDT)",
+            font=ctk.CTkFont("Segoe UI", 13, "bold"),
+            text_color=TEXT_PRIMARY,
+        ).grid(row=0, column=0, columnspan=3, sticky="w", padx=14, pady=(9, 4))
+        self._data_cotacao = ctk.CTkEntry(
+            frame, placeholder_text="AAAA-MM-DD", width=125
+        )
+        self._data_cotacao.grid(row=1, column=0, padx=(14, 8), pady=6, sticky="w")
+        self._data_cotacao.insert(
+            0, (datetime.now(timezone.utc).date() - timedelta(days=1)).isoformat()
+        )
+        ctk.CTkButton(
+            frame, text="Avaliar (somente banco)", width=190,
+            command=self._apurar_valor_historico
+        ).grid(row=1, column=1, padx=5, pady=6, sticky="w")
+        self._btn_buscar_cotacoes = ctk.CTkButton(
+            frame, text="Buscar fechamentos na Binance", width=220,
+            fg_color="#2f4c69", command=self._buscar_cotacoes_historicas
+        )
+        self._btn_buscar_cotacoes.grid(
+            row=1, column=2, padx=6, pady=6, sticky="w"
+        )
+        self._historico_valores = ctk.CTkLabel(
+            frame, text="Selecione uma data encerrada para consultar o SQLite.",
+            font=ctk.CTkFont("Segoe UI", 12), text_color=TEXT_SECONDARY,
+            justify="left", anchor="w",
+        )
+        self._historico_valores.grid(
+            row=2, column=0, columnspan=3, sticky="ew",
+            padx=14, pady=(3, 10)
+        )
+        frame.grid_columnconfigure(2, weight=1)
+
+    def _dia_selecionado(self):
+        from backend.historical_prices import ErroCotacaoHistorica
+        valor = self._data_cotacao.get().strip()
+        try:
+            dia = date.fromisoformat(valor)
+        except ValueError as exc:
+            raise ErroCotacaoHistorica(
+                "Informe data no formato AAAA-MM-DD."
+            ) from exc
+        validar_data_encerrada(dia)
+        return dia
+
+    def _apurar_valor_historico(self):
+        try:
+            dia = self._dia_selecionado()
+            resultado = patrimonio_historico_na_data(
+                self._dados._store, dia
+            )
+            if resultado["completo"]:
+                valor = f"{self._valor(resultado['patrimonio_total'])} USDT"
+                total = f"{self._valor(resultado['resultado_total'])} USDT"
+                texto = (
+                    f"Patrimônio em {dia}: {valor}  |  "
+                    f"P/L realizado acumulado: "
+                    f"{self._valor(resultado['lucro_realizado'])} USDT  |  "
+                    f"P/L não realizado: "
+                    f"{self._valor(resultado['lucro_nao_realizado'])} USDT  |  "
+                    f"P/L total: {total}  |  Caixa: "
+                    f"{self._valor(resultado['caixa_usdt'])} USDT"
+                )
+                cor = NEON_GREEN
+            else:
+                texto = (
+                    f"Patrimônio em {dia}: INDISPONÍVEL — "
+                    + "; ".join(resultado["alertas"])
+                    + f" | P/L realizado (operações): "
+                    f"{self._valor(resultado['lucro_realizado'])} USDT."
+                )
+                cor = NEON_RED
+            self._historico_valores.configure(text=texto, text_color=cor)
+            return resultado
+        except Exception as exc:
+            self._historico_valores.configure(
+                text=f"Não é possível apurar: {exc}", text_color=NEON_RED
+            )
+            return None
+
+    def _buscar_cotacoes_historicas(self):
+        if self._busca_historica_ativa:
+            return
+        try:
+            dia = self._dia_selecionado()
+            model = calcular_analise_por_periodo(
+                self._dados.carregar_operacoes_precisas(), fim=dia
+            )
+            ativos_abertos = [
+                nome for nome, valores in model["ativos"].items()
+                if valores["quantidade"] > 0
+            ]
+            if not ativos_abertos:
+                self._apurar_valor_historico()
+                return
+        except Exception as exc:
+            self._historico_valores.configure(
+                text=f"Não é possível consultar: {exc}", text_color=NEON_RED
+            )
+            return
+
+        self._busca_historica_ativa = True
+        self._btn_buscar_cotacoes.configure(state="disabled")
+        self._historico_valores.configure(
+            text="Consultando apenas candles diários históricos. "
+                 "Nenhum preço atual será utilizado.",
+            text_color=CYAN,
+        )
+
+        def worker():
+            try:
+                import ccxt
+                exchange = ccxt.binance({
+                    "enableRateLimit": True, "timeout": 12000
+                })
+                count = buscar_e_persistir_fechamentos(
+                    self._dados._store, exchange, dia, ativos_abertos
+                )
+                erro = None
+            except Exception as exc:
+                count, erro = 0, str(exc)
+
+            def concluir():
+                self._busca_historica_ativa = False
+                if not self.winfo_exists():
+                    return
+                self._btn_buscar_cotacoes.configure(state="normal")
+                if erro:
+                    self._historico_valores.configure(
+                        text=f"Cotações não importadas: {erro}",
+                        text_color=NEON_RED
+                    )
+                else:
+                    self._apurar_valor_historico()
+            try:
+                self.after(0, concluir)
+            except Exception:
+                pass
+
+        threading.Thread(target=worker, daemon=True).start()
 
     def _on_periodo(self, selecionado, recarregar=True):
         estado = "normal" if selecionado == "Personalizado" else "disabled"
@@ -259,7 +411,7 @@ class JanelaAnalisePeriodo(ctk.CTkFrame):
         data_texto = fim.strftime("%d/%m/%Y") if fim else "última operação"
         msg = (f"Custo da posição apurado até {data_texto}. "
                "Resultados realizados calculados pelo custo médio de todas as compras anteriores. "
-               "Sem preços históricos, não há P/L não realizado nem patrimônio retroativo nesta aba. "
+               "Avalie o patrimônio histórico separadamente pelas cotações fechadas registradas no SQLite. "
                "Valores em USDT; não são lucro fiscal em BRL.")
         if selecionado == "Todos os ativos":
             msg += (
