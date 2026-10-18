@@ -391,13 +391,13 @@ def main():
             assert "EXTERNOS AO CSV" in first_ui._posicoes.cget("text")
             assert "Cold wallet" in first_ui._posicoes.cget("text")
             assert new_db.carregar_operacoes_precisas() == []
-            first_win.destroy()
-            print("GUI_PRE01_CUSTODIA_EXTERNA_SEM_COMPRA=PASS")
-
             # CUST-01: new GUI fields are available for an auditable transfer.
             assert first_ui._mov_campos["Taxa cobrada no ativo"].winfo_exists()
             assert first_ui._tipo_movimento.get() == "transferencia"
             print("GUI_CUST01_MOVIMENTACAO_EXTERNAS=PASS")
+
+            first_win.destroy()
+            print("GUI_PRE01_CUSTODIA_EXTERNA_SEM_COMPRA=PASS")
 
             # DIST/OPS: settings are real desktop controls, not new dashboard tabs.
             app._abrir_configuracoes()
