@@ -177,8 +177,9 @@ def main():
                 "7. Análise rolada verticalmente: extrato financeiro acessível.\n"
                 "8. Caixa: navegação até a última coluna do extrato.\n"
                 "9. Registro: rolagem até o botão de confirmação.\n\n"
-                "**Em desenvolvimento:** revisão final de contraste e acabamento, "
-                "atualizador, atalho, modo bandeja e instalador ainda não concluídos.\n"
+                "**Em desenvolvimento:** painel de configurações e bandeja opt-in "
+                "implementados; atualização/instalador assinados ainda aguardam "
+                "homologação e pacote oficial.\n"
             )
             (target / "README.md").write_text(report, encoding="utf-8")
             # Primeira utilização: captura do diálogo REAL sobre o programa,
@@ -209,7 +210,16 @@ def main():
             render(janela_inicio)
             assert assistente._externo_flag.get()
             capture(janela_inicio, "11_conciliacao_saldo_fora_csv.png", target)
+            assistente._parent_canvas.yview_moveto(1.0)
+            render(janela_inicio)
+            capture(janela_inicio, "12_transferencias_vendas_externas.png", target)
             janela_inicio.destroy()
+            app._abrir_configuracoes()
+            render(root)
+            render(app._janela_aplicativo)
+            assert app._janela_aplicativo._btn_instalar.cget("state") == "disabled"
+            capture(app._janela_aplicativo, "13_configuracoes_windows.png", target)
+            app._janela_aplicativo.destroy()
             render(root)
             print("FRONT_CAPTURE=PASS", flush=True)
         finally:
