@@ -144,11 +144,11 @@ class ArmazemSQLite:
         if self.arquivo_db.is_file() and self.arquivo_db.stat().st_size:
             with closing(sqlite3.connect(self.arquivo_db.as_uri() + "?mode=ro", uri=True)) as verify:
                 version = verify.execute("PRAGMA user_version").fetchone()[0]
-            if version < 5:
+            if version < 6:
                 from backend.backup_sqlite import criar_backup_sqlite
                 criar_backup_sqlite(
                     self.arquivo_db, self.diretorio / "backups" / "sqlite",
-                    motivo=f"antes_schema_v{version}_para_v5",
+                    motivo=f"antes_schema_v{version}_para_v6",
                 )
         conn = self._conectar()
         try:
@@ -207,7 +207,21 @@ class ArmazemSQLite:
                 motivo TEXT NOT NULL,
                 alterado_em_utc TEXT NOT NULL
             )""")
-            conn.execute("PRAGMA user_version=5")
+            conn.execute("""CREATE TABLE IF NOT EXISTS movimentacoes_custodia (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                data_utc TEXT NOT NULL,
+                tipo TEXT NOT NULL CHECK(tipo IN ('transferencia','venda')),
+                moeda TEXT NOT NULL,
+                origem TEXT NOT NULL,
+                destino TEXT NOT NULL,
+                quantidade TEXT NOT NULL,
+                taxa_ativo TEXT NOT NULL,
+                receita_usdt TEXT NOT NULL,
+                taxa_usdt TEXT NOT NULL,
+                observacao TEXT NOT NULL,
+                criado_em_utc TEXT NOT NULL
+            )""")
+            conn.execute("PRAGMA user_version=6")
         finally:
             conn.close()
 
@@ -512,6 +526,125 @@ class ArmazemSQLite:
         return {"moeda":ativo,"quantidade":qtd,"custodia":local,
                 "custo_total_usdt":custo,"backup_sqlite":manifest,
                 "aviso_backup_sqlite":aviso}
+
+    @staticmethod
+    def _movimentos_transacionais(conn) -> list[dict]:
+        rows = conn.execute(
+            "SELECT id,data_utc,tipo,moeda,origem,destino,quantidade,"
+            "taxa_ativo,receita_usdt,taxa_usdt,observacao "
+            "FROM movimentacoes_custodia ORDER BY id"
+        ).fetchall()
+        campos=("ID","Data","Tipo","Moeda","Origem","Destino",
+                "Quantidade","Taxa_Ativo","Receita_USDT","Taxa_USDT","Observacao")
+        return [dict(zip(campos,row)) for row in rows]
+
+    @staticmethod
+    def _externos_transacionais(conn) -> list[dict]:
+        rows=conn.execute(
+            "SELECT data_posicao,moeda,quantidade,custodia,custo_total_usdt "
+            "FROM posicoes_externas ORDER BY id"
+        ).fetchall()
+        return [dict(zip(
+            ("Data","Moeda","Quantidade","Custodia","Custo_Total_USDT"),row
+        )) for row in rows]
+
+    def listar_movimentos_custodia(self) -> list[dict]:
+        self._conferir_origem()
+        conn=self._conectar()
+        try:
+            return self._movimentos_transacionais(conn)
+        finally:
+            conn.close()
+
+    def registrar_movimento_custodia(
+        self, *, tipo:str, moeda:str, origem:str, destino:str, quantidade:str,
+        data_utc:str, taxa_ativo:str, receita_usdt:str, taxa_usdt:str,
+        observacao:str,
+    ) -> dict:
+        """Append immutable transfer/disposal, validate complete replay under lock."""
+        from backend.custody_ledger import numero, apurar_custodia, ErroMovimentacaoCustodia
+        tipo=tipo.strip().lower()
+        ativo=moeda.strip().upper()
+        origem=origem.strip()
+        destino=destino.strip()
+        if tipo not in ("transferencia","venda"):
+            raise ErroArmazenamento("Tipo deve ser transferência ou venda externa.")
+        if not (ativo.isascii() and ativo.isalnum() and 2<=len(ativo)<=12):
+            raise ErroArmazenamento("Ativo inválido.")
+        if not origem or not destino or len(origem)>80 or len(destino)>80:
+            raise ErroArmazenamento("Informe origem e destino de custódia.")
+        if not (8<=len(observacao.strip())<=500):
+            raise ErroArmazenamento("Justificativa documental (8 a 500 caracteres) obrigatória.")
+        try:
+            dia=datetime.strptime(data_utc,"%Y-%m-%d").date()
+            if dia > datetime.now(timezone.utc).date():
+                raise ValueError("futuro")
+            quant=numero(quantidade,"Quantidade")
+            fee_coin=numero(taxa_ativo,"Taxa no ativo",allow_zero=True)
+            fee_dollar=numero(taxa_usdt,"Taxa USDT",allow_zero=True)
+            revenue=numero(receita_usdt,"Receita USDT",allow_zero=(tipo=="transferencia"))
+        except (ValueError, TypeError) as exc:
+            raise ErroArmazenamento("Data ou valores inválidos: "+str(exc)) from exc
+        if tipo=="transferencia" and (revenue!=0 or fee_dollar!=0 or origem==destino):
+            raise ErroArmazenamento("Transferência sem receita/corretagem USDT e entre locais distintos.")
+        if tipo=="venda" and (ativo=="USDT" or revenue<=fee_dollar):
+            raise ErroArmazenamento("Venda requer receita líquida positiva em USDT.")
+        row={
+            "Data":dia.isoformat(),"Tipo":tipo,"Moeda":ativo,
+            "Origem":origem,"Destino":destino,"Quantidade":str(quant),
+            "Taxa_Ativo":str(fee_coin),"Receita_USDT":str(revenue),
+            "Taxa_USDT":str(fee_dollar),"Observacao":observacao.strip(),
+        }
+        self._conferir_origem()
+        con=self._conectar()
+        try:
+            con.execute("BEGIN IMMEDIATE")
+            opens=self._externos_transacionais(con)
+            if not opens:
+                raise ErroArmazenamento("Não existem saldos externos para movimentar.")
+            # The opening snapshot is not a historical purchase: no backdating.
+            datas=[str(p["Data"])[:10] for p in opens if p["Moeda"]==ativo]
+            if not datas or dia.isoformat()<max(datas):
+                raise ErroArmazenamento(
+                    "Movimentação anterior à posição externa declarada."
+                )
+            earlier=self._movimentos_transacionais(con)
+            latest=max((m["Data"][:10] for m in earlier if m["Moeda"]==ativo),
+                       default=None)
+            if latest and dia.isoformat()<latest:
+                raise ErroArmazenamento(
+                    "Movimentação anterior a um registro já confirmado; "
+                    "não reordenar histórico financeiro."
+                )
+            from backend.custody_ledger import apurar_custodia
+            apurar_custodia(opens,earlier+[row])
+            con.execute(
+                "INSERT INTO movimentacoes_custodia "
+                "(data_utc,tipo,moeda,origem,destino,quantidade,taxa_ativo,"
+                "receita_usdt,taxa_usdt,observacao,criado_em_utc) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                (row["Data"]+"T12:00:00Z",tipo,ativo,origem,destino,
+                 row["Quantidade"],row["Taxa_Ativo"],row["Receita_USDT"],
+                 row["Taxa_USDT"],row["Observacao"],
+                 datetime.now(timezone.utc).isoformat())
+            )
+            con.execute("COMMIT")
+        except Exception:
+            if con.in_transaction:
+                con.execute("ROLLBACK")
+            raise
+        finally:
+            con.close()
+        try:
+            from backend.backup_sqlite import criar_backup_sqlite
+            snapshot=criar_backup_sqlite(
+                self.arquivo_db,self.diretorio/"backups"/"sqlite",
+                motivo="depois_movimento_custodia",
+            )
+            aviso,manifest=None,snapshot["manifesto"]
+        except Exception as exc:
+            aviso,manifest="Movimentação salva, backup posterior falhou: "+str(exc),None
+        return {**row,"backup_sqlite":manifest,"aviso_backup_sqlite":aviso}
 
     def corrigir_posicao(
         self, *, origem: str, moeda: str, custodia: str,
