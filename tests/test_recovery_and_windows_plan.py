@@ -119,7 +119,7 @@ class WindowsUpdatePlanTests(unittest.TestCase):
         self.assertFalse(d["instalacao_executada"])
         self.assertFalse(d["publicacao_autorizada"])
         self.assertFalse(d["atualizacao_automatica_ativa"])
-        self.assertEqual(Path(d["diretorio_dados_persistente"]),data)
+        self.assertEqual(Path(d["diretorio_dados_persistente"]),data.resolve())
         self.assertEqual(list(self.root.iterdir()),[self.pacote])
         with self.assertRaisesRegex(ErroCicloWindows,"superior"):
             planejar_instalacao_sem_executar(
