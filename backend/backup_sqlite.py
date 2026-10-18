@@ -80,7 +80,7 @@ def criar_backup_sqlite(banco: Path, destino: Path, *, motivo: str = "manual") -
             raise ErroBackupSQLite(f"Falha durante a cópia online: {exc}") from exc
         verificado = verificar_backup_sqlite(temporario)
         # A cópia precisa estar persistida antes de ser anunciada.
-        with temporario.open("rb") as f:
+        with temporario.open("rb+") as f:
             os.fsync(f.fileno())
         manifesto = {
             "formato": "DCA-SQLITE-BACKUP-1",
