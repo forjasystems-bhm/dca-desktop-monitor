@@ -324,7 +324,7 @@ class JanelaDistribuicao(ctk.CTkFrame):
                     continue
                 custo_pl = dados_pl.get("custo_posicao_final", 0)
                 pl_valido = dados_pl.get("lucro_nao_realizado")
-                if custo_pl > 0.000001 and pl_valido is not None:
+                if custo_pl is not None and custo_pl > 0.000001 and pl_valido is not None:
                     pl_map[moeda_pl] = pl_valido / custo_pl * 100
 
             self.donut_chart.atualizar_dados(ord_dist, cor_map, pl_map=pl_map)
@@ -370,7 +370,11 @@ class JanelaDistribuicao(ctk.CTkFrame):
         cor_retorno = TEXT_MUTED if pct_total is None else NEON_GREEN if pct_total >= 0 else NEON_RED
 
         self._lbl_patrimonio.configure(text=self._fmt_val(tot_val))
-        self._lbl_custo.configure(text=self._fmt_val(tot_custo))
+        self._lbl_custo.configure(
+            text=self._fmt_val(tot_custo) + (
+                " (parcial: USDC s/ custo)" if resumo.get("base_de_custo_incompleta") else ""
+            )
+        )
         # Compras históricas: sempre USDT, sem câmbio atual aplicado retroativamente.
         self._lbl_compras_hist.configure(text=f"{tot_comprado:,.2f} USDT")
         self._lbl_pl_nr.configure(text=self._fmt_val(tot_pl_nr), text_color=cor_nr)
@@ -393,7 +397,7 @@ class JanelaDistribuicao(ctk.CTkFrame):
             def _pct_ativo(d):
                 c = d.get("custo_posicao_final", 0)
                 pl_nr = d.get("lucro_nao_realizado")
-                return (pl_nr / c * 100) if c > 0.000001 and pl_nr is not None else None
+                return (pl_nr / c * 100) if c is not None and c > 0.000001 and pl_nr is not None else None
 
             def _legenda_ativo(item):
                 p = _pct_ativo(item[1])
@@ -417,7 +421,7 @@ class JanelaDistribuicao(ctk.CTkFrame):
         comprado_hist = dados.get("total_comprado_usdt", 0)
         if pl_nr is None:
             str_pct = "Indisponível"
-        elif custo > 0.000001:
+        elif custo is not None and custo > 0.000001:
             str_pct = f"{pl_nr / custo * 100:+.2f}%"
         elif comprado_hist > 0.000001:
             str_pct = f"{pl_r / comprado_hist * 100:+.2f}%"
@@ -454,6 +458,15 @@ class JanelaDistribuicao(ctk.CTkFrame):
                 valores = [moeda, f"{qtd:,.2f} USDT", "N/A", self._fmt_prc(1.0),
                            "N/A", self._fmt_val(v_atual), "N/A", "N/A", "N/A", "0.00%"]
                 pos = True
+        elif moeda == "USDC (Caixa)":
+            # USDC é patrimônio se cotado, não uma compra de custo USDT = 1:1.
+            valores = [
+                moeda, f"{qtd:,.8f} USDC", "Não apurado",
+                self._fmt_prc(p_mkt), "Não apurado",
+                self._fmt_val(v_atual), "Não apurado", "Não aplicável",
+                "Não apurado", "—",
+            ]
+            pos = True
         else:
             valores = [
                 moeda, f"{qtd:,.8f}", self._fmt_prc(pmc), self._fmt_prc(p_mkt),
