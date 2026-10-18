@@ -39,7 +39,7 @@ jobs:
       - name: Upload real interface screenshots
         uses: actions/upload-artifact@v4
         with:
-          name: DCA-Frontend-Real-Screenshots-FIN05
+          name: DCA-PreRelease-UI-Evidence
           path: docs/front-screenshots/
           if-no-files-found: error
           retention-days: 30
