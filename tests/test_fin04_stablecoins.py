@@ -190,7 +190,8 @@ class StablecoinsTests(unittest.TestCase):
         self.assertTrue(portfolio["totais"]["avaliacao_completa"])
         self.assertEqual(portfolio["totais"]["valor_atual"], 0)
         self.assertEqual(portfolio["totais"]["realizado"], 0)
-        self.assertIsNone(portfolio["totais"].get("cotacoes_pendentes") and None)
+        self.assertEqual(portfolio["totais"]["cotacoes_pendentes"], [])
+        self.assertFalse(portfolio["totais"]["base_de_custo_incompleta"])
 
     def test_usdc_legacy_historico_sem_conversao_ficticia_a_usdt(self):
         self.assertTrue(self.depositar("USDC", "80"))
