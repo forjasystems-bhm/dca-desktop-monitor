@@ -24,7 +24,8 @@ class DataManager:
     """Interface de compatibilidade para as telas; persistência nova em SQLite."""
 
     def __init__(self, arquivo_csv: str = "meu_diario_operacoes.csv",
-                 *, data_dir=None, legacy_csv=None):
+                 *, data_dir=None, legacy_csv=None,
+                 auto_import_legacy: bool = True):
         from backend.storage_sqlite import ArmazemSQLite, diretorio_dados_padrao
 
         raiz_projeto = Path(__file__).resolve().parent.parent
@@ -36,7 +37,7 @@ class DataManager:
                         'Quantidade', 'Taxa_BRL']
         self._store = ArmazemSQLite(
             Path(data_dir) if data_dir is not None else diretorio_dados_padrao(),
-            self.arquivo_csv,
+            self.arquivo_csv, auto_importar_legado=auto_import_legacy,
         )
         self.arquivo_db = self._store.arquivo_db
         self.ultimo_erro = None
@@ -58,6 +59,18 @@ class DataManager:
 
     def exportar_csv(self, destino: str) -> None:
         self._store.exportar_csv(Path(destino))
+
+    def prever_csv(self, caminho: str) -> dict:
+        return self._store.prever_importacao_csv(Path(caminho))
+
+    def confirmar_csv(self, caminho: str, sha256: str) -> dict:
+        return self._store.importar_csv_conferido(Path(caminho), sha256)
+
+    def carregar_posicoes_iniciais(self) -> List[Dict]:
+        return self._store.listar_posicoes_iniciais()
+
+    def registrar_posicao_inicial(self, **campos) -> dict:
+        return self._store.registrar_posicao_inicial(**campos)
 
     def _executar_mutacao(self, descricao: str, operacao):
         from backend.operation_integrity import ErroIntegridadeFinanceira
