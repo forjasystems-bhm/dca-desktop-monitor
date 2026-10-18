@@ -67,7 +67,8 @@ def install_windows() -> None:
     shortcut = desktop / f"{APP_NAME}.lnk"
     if shortcut.exists():
         print(f"O atalho já existe: {shortcut}")
-        return
+        return {"criado": False, "atalho": str(shortcut),
+                "status": "Atalho já existe; não foi sobrescrito."}
     if not desktop.is_dir():
         raise FileNotFoundError(
             "Pasta Desktop não encontrada. Se estiver no OneDrive, "
@@ -83,6 +84,8 @@ def install_windows() -> None:
             "Falha ao criar o atalho: " + (result.stderr or "sem confirmação")
         )
     print(f"Atalho criado em: {shortcut}")
+    return {"criado": True, "atalho": str(shortcut),
+            "status": "Atalho criado e verificado."}
 
 
 def install_linux() -> None:
