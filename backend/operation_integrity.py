@@ -57,7 +57,7 @@ def validar_campos(registro: dict, linha: int) -> None:
         # nunca preço USDT de USDC. Valor_USDT é nominal legado para USDC.
         if abs(quantidade - valor) > TOL_QUANTIDADE:
             raise ErroIntegridadeFinanceira(
-                f"Operação {linha}: {moeda} exige Quantidade igual ao Valor_USDT "
+                f"Operação {linha}: {moeda} exige Quantidade igual a Valor_USDT "
                 "nominal de transferência. Preço é cotação BRL informada, "
                 "não uma conversão USDC/USDT."
             )
