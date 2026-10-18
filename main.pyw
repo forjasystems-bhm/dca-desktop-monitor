@@ -74,7 +74,8 @@ class PortfolioDCA:
         self._preencher_dados_iniciais()
         self._iniciar_atualizacoes_automaticas()
         if (not self.data_manager.carregar_operacoes_precisas()
-                and not self.data_manager.carregar_posicoes_iniciais()):
+                and not self.data_manager.carregar_posicoes_iniciais()
+                and not self.data_manager.carregar_posicoes_externas()):
             self.janela.after(500, self._abrir_primeiro_uso)
         # A GUI já pode consultar os dados locais neste ponto.
         # Binance nunca bloqueia a inicialização do aplicativo.
@@ -362,6 +363,7 @@ class PortfolioDCA:
                 moedas = list(dict.fromkeys(
                     list(MOEDAS_SUPORTADAS)
                     + [str(x["Moeda"]) for x in self.data_manager.carregar_posicoes_iniciais()]
+                    + [str(x["Moeda"]) for x in self.data_manager.carregar_posicoes_externas()]
                     + [str(x["Moeda"]) for x in self.data_manager.carregar_operacoes_precisas()]
                 ))
                 if "USDC" not in moedas:
