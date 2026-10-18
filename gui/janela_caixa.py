@@ -336,7 +336,11 @@ class JanelaCaixa(ctk.CTkFrame):
         try:
             ops  = self._data_manager.carregar_operacoes()
             iniciais = self._data_manager.carregar_posicoes_iniciais()
-            externos = self._data_manager.carregar_posicoes_externas()
+            from backend.custody_ledger import apurar_custodia
+            externos = apurar_custodia(
+                self._data_manager.carregar_posicoes_externas(),
+                self._data_manager.carregar_movimentos_custodia(),
+            )["saldos"]
             info = self._engine.calcular_saldo_usdt(ops, saldos_iniciais=iniciais)
             from decimal import Decimal
             caixa_externo = sum((
