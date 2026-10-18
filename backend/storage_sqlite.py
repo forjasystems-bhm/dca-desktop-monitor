@@ -612,19 +612,26 @@ class ArmazemSQLite:
             if not opens:
                 raise ErroArmazenamento("Não existem saldos externos para movimentar.")
             # The opening snapshot is not a historical purchase: no backdating.
-            datas=[str(p["Data"])[:10] for p in opens if p["Moeda"]==ativo]
-            if ativo=="USDT" and not datas:
-                # A sale can create verifiable USDT in its nominated
-                # destination, even when there was no initial USDT lot.
-                datas=[
-                    m["Data"][:10] for m in self._movimentos_transacionais(con)
-                    if m["Tipo"]=="venda" and m["Destino"]==origem
-                ]
-            if not datas or dia.isoformat()<max(datas):
-                raise ErroArmazenamento(
-                    "Movimentação anterior à posição externa declarada."
-                )
             earlier=self._movimentos_transacionais(con)
+            datas=[
+                str(p["Data"])[:10] for p in opens
+                if p["Moeda"]==ativo and p["Custodia"]==origem
+            ]
+            datas.extend(
+                m["Data"][:10] for m in earlier
+                if m["Moeda"]==ativo
+                and m["Tipo"]=="transferencia" and m["Destino"]==origem
+            )
+            if ativo=="USDT":
+                datas.extend(
+                    m["Data"][:10] for m in earlier
+                    if m["Tipo"]=="venda" and m["Destino"]==origem
+                )
+            if not datas or dia.isoformat()<min(datas):
+                raise ErroArmazenamento(
+                    "Origem sem saldo comprovado nesta data. "
+                    "Não utilizar saldo declarado em outra custódia."
+                )
             latest=max((m["Data"][:10] for m in earlier if m["Moeda"]==ativo),
                        default=None)
             if latest and dia.isoformat()<latest:
