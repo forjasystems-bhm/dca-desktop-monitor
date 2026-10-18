@@ -63,8 +63,17 @@ class JanelaRegistroUI(ctk.CTkFrame):
         self.columnconfigure(0, weight=1)
         self.rowconfigure(0, weight=1)
 
-        center = ctk.CTkFrame(self, fg_color="transparent")
-        center.grid(row=0, column=0)
+        # O formulário pode ultrapassar a altura útil após inclusão da
+        # corretagem opcional. Não esconder o botão confirmar: rolagem
+        # vertical da aba inteira, preservando a ficha central aprovada.
+        self._scroll_registro = ctk.CTkScrollableFrame(
+            self, fg_color="transparent",
+            scrollbar_button_color=BORDER,
+        )
+        self._scroll_registro.grid(row=0, column=0, sticky="nsew")
+
+        center = ctk.CTkFrame(self._scroll_registro, fg_color="transparent")
+        center.pack(anchor="center")
 
         self._build_card(center)
         self._build_footer(center)
@@ -73,7 +82,7 @@ class JanelaRegistroUI(ctk.CTkFrame):
         outer = ctk.CTkFrame(parent, fg_color=BG_CARD,
                              border_color=BORDER, border_width=1,
                              corner_radius=8)
-        outer.pack(pady=30, padx=40)
+        outer.pack(pady=(12, 12), padx=16)
 
         title_strip = ctk.CTkFrame(outer, fg_color=BG_INPUT,
                                    corner_radius=0, height=46,
@@ -89,7 +98,7 @@ class JanelaRegistroUI(ctk.CTkFrame):
                                       fill="both", expand=True)
 
         inner = ctk.CTkFrame(outer, fg_color="transparent")
-        inner.pack(padx=36, pady=24)
+        inner.pack(padx=24, pady=18)
 
         self._build_form(inner)
 
@@ -193,10 +202,10 @@ class JanelaRegistroUI(ctk.CTkFrame):
 
     def _build_footer(self, parent: ctk.CTkFrame):
         ctk.CTkFrame(parent, fg_color=BORDER, height=1,
-                     corner_radius=0).pack(fill="x", padx=40, pady=(0, 20))
+                     corner_radius=0).pack(fill="x", padx=28, pady=(0, 12))
 
         footer = ctk.CTkFrame(parent, fg_color="transparent")
-        footer.pack(pady=(0, 30))
+        footer.pack(pady=(0, 12))
 
         self._btn_salvar = ctk.CTkButton(
             footer,
