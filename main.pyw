@@ -56,6 +56,9 @@ class PortfolioDCA:
         self.price_manager   = price_manager
         self.analysis_engine = AnalysisEngine()
         self._stop_updates   = False
+        self._closing = False
+        self._refresh_lock = threading.Lock()
+        self._initial_refresh_id = None
 
         self.janela = janela
         self.janela.title("Portfolio CRIPTO — Dashboard Interativo")
@@ -68,6 +71,19 @@ class PortfolioDCA:
         self._criar_interface()
         self._preencher_dados_iniciais()
         self._iniciar_atualizacoes_automaticas()
+        # A GUI já pode consultar os dados locais neste ponto.
+        # Binance nunca bloqueia a inicialização do aplicativo.
+        self.aba_distribuicao.set_status(
+            "Carteira local · aguardando cotações", TEXT_SECONDARY
+        )
+        if CCXT_AVAILABLE:
+            self._initial_refresh_id = self.janela.after(
+                1200, self._primeira_consulta_online
+            )
+        else:
+            self.aba_distribuicao.set_status(
+                "Offline · cotações indisponíveis", "#e3b341"
+            )
 
     def _aplicar_cursor_abas(self):
         try:
@@ -250,6 +266,11 @@ class PortfolioDCA:
         self.aba_analise.atualizar()
         self.aba_edicao.atualizar()
 
+    def _primeira_consulta_online(self):
+        self._initial_refresh_id = None
+        if not self._closing:
+            self.atualizar_todas_as_analises()
+
     def _iniciar_atualizacoes_automaticas(self) -> None:
         self._countdown_ativo = True
         self._countdown       = CONFIG["intervalo_atualizacao"]
@@ -257,7 +278,7 @@ class PortfolioDCA:
         self._tick_countdown()
 
     def _tick_countdown(self):
-        if not self._countdown_ativo:
+        if not self._countdown_ativo or self._closing:
             return
         if self._countdown > 0:
             self.aba_distribuicao.set_countdown(self._countdown)
@@ -268,40 +289,75 @@ class PortfolioDCA:
             self._after_id = None
             if CCXT_AVAILABLE:
                 self.atualizar_todas_as_analises()
+            else:
+                self._atualizar_status(
+                    "Offline · histórico local disponível", "#e3b341"
+                )
+                self._reiniciar_countdown()
 
     def _reiniciar_countdown(self):
+        if self._closing or not self._countdown_ativo:
+            return
         if self._after_id is not None:
             self.janela.after_cancel(self._after_id)
             self._after_id = None
         self._countdown = CONFIG["intervalo_atualizacao"]
         self._tick_countdown()
 
-    def atualizar_todas_as_analises(self) -> None:
+    def _agendar_ui(self, acao):
+        """Descarta resultados de tarefas encerradas, sem criar janelas ocultas."""
+        if self._closing:
+            return False
+        try:
+            self.janela.after(
+                0, lambda: None if self._closing else acao()
+            )
+            return True
+        except Exception:
+            # Tk pode já ter sido destruído ao finalizar a aplicação.
+            return False
+
+    def atualizar_todas_as_analises(self) -> bool:
+        """No more than one Binance sync at a time; offline is non-blocking."""
+        if self._closing or not self._refresh_lock.acquire(blocking=False):
+            return False
+
         def worker():
             try:
-                self._atualizar_status("⟳ Atualizando preços na Binance...", CYAN)
-                # Mesmo que falhe UMA cotação, o Dashboard deve ser recalculado
-                # para sinalizar posições indisponíveis, nunca manter número velho.
+                if self._closing:
+                    return
+                self._atualizar_status("⟳ Consultando cotações...", CYAN)
                 moedas = list(dict.fromkeys(MOEDAS_SUPORTADAS))
                 if "USDC" not in moedas:
                     operacoes = self.data_manager.carregar_operacoes_precisas()
                     if any(str(op["Moeda"]).upper() == "USDC" for op in operacoes):
                         moedas.append("USDC")
                 sucesso = self.price_manager.atualizar_precos(moedas)
-                self.janela.after(
-                    0, lambda ok=sucesso: self._atualizar_abas_seguro(ok)
+                if self._closing:
+                    return
+                self._agendar_ui(
+                    lambda ok=sucesso: self._atualizar_abas_seguro(ok)
                 )
             except Exception as exc:
-                logger.exception("Falha no ciclo de atualização: %s", exc)
-                self._atualizar_status(
-                    "✕ Não foi possível atualizar; verificar dados e rede",
-                    "#ff4d4d"
-                )
-                self.janela.after(0, self._reiniciar_countdown)
+                logger.exception("Falha não fatal no ciclo de atualização: %s", exc)
+                if not self._closing:
+                    self._agendar_ui(
+                        lambda: self._atualizar_abas_seguro(False)
+                    )
+            finally:
+                self._refresh_lock.release()
 
-        threading.Thread(target=worker, daemon=True).start()
+        try:
+            threading.Thread(target=worker, daemon=True).start()
+        except Exception:
+            self._refresh_lock.release()
+            logger.exception("Não foi possível iniciar atualização de cotações")
+            return False
+        return True
 
     def _atualizar_abas_seguro(self, precos_completos=True):
+        if self._closing:
+            return
         try:
             self.aba_distribuicao.atualizar()
             self.aba_analise.atualizar()
@@ -326,17 +382,38 @@ class PortfolioDCA:
         self.atualizar_todas_as_analises()
 
     def _atualizar_status(self, mensagem: str, cor: str = TEXT_SECONDARY) -> None:
+        if self._closing:
+            return
         def _update():
-            self.aba_distribuicao.set_status(mensagem, cor)
+            if not self._closing:
+                self.aba_distribuicao.set_status(mensagem, cor)
         if threading.current_thread() is threading.main_thread():
             _update()
         else:
-            self.janela.after(0, _update)
+            self._agendar_ui(_update)
 
     def _on_closing(self) -> None:
+        if self._closing:
+            return
+        self._closing = True
         self._countdown_ativo = False
-        self._stop_updates    = True
-        self.janela.destroy()
+        self._stop_updates = True
+        for after_id in (self._after_id, self._initial_refresh_id):
+            if after_id is not None:
+                try:
+                    self.janela.after_cancel(after_id)
+                except Exception:
+                    pass
+        self._after_id = None
+        self._initial_refresh_id = None
+        try:
+            self.aba_distribuicao.donut_chart.parar()
+        except (AttributeError, RuntimeError):
+            pass
+        try:
+            self.janela.destroy()
+        except Exception:
+            logger.exception("Falha ao fechar janela")
 
 
 if __name__ == "__main__":
