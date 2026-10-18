@@ -125,7 +125,7 @@ class JanelaRegistro(JanelaRegistroUI):
 
         try:
             operacoes = self._data_manager.carregar_operacoes()
-            portfolio = self._engine.calcular_portfolio(operacoes, self._price_manager.precos_cache)
+            portfolio = self._engine.calcular_portfolio(operacoes, self._price_manager.precos_cache, saldos_iniciais=self._data_manager.carregar_posicoes_iniciais())
             saldo_exato = Decimal(str(portfolio.get(moeda, {}).get("quantidade_final", 0)))
 
             if saldo_exato <= 0:
@@ -161,7 +161,7 @@ class JanelaRegistro(JanelaRegistroUI):
         if tipo in (TipoOperacao.VENDA, TipoOperacao.VENDA_TOTAL) and moeda and not self._eh_stablecoin(moeda):
             try:
                 operacoes = self._data_manager.carregar_operacoes()
-                portfolio = self._engine.calcular_portfolio(operacoes, self._price_manager.precos_cache)
+                portfolio = self._engine.calcular_portfolio(operacoes, self._price_manager.precos_cache, saldos_iniciais=self._data_manager.carregar_posicoes_iniciais())
                 saldo = portfolio.get(moeda, {}).get("quantidade_final", 0)
                 self.set_label_saldo(f"Saldo: {saldo:.8f} {moeda}")
             except Exception:
@@ -244,7 +244,7 @@ class JanelaRegistro(JanelaRegistroUI):
             return
         try:
             operacoes = self._data_manager.carregar_operacoes()
-            portfolio = self._engine.calcular_portfolio(operacoes, self._price_manager.precos_cache)
+            portfolio = self._engine.calcular_portfolio(operacoes, self._price_manager.precos_cache, saldos_iniciais=self._data_manager.carregar_posicoes_iniciais())
             saldo = Decimal(str(portfolio.get(moeda, {}).get("quantidade_final", 0)))
             preco_str = self.get_preco_str()
             preco = Decimal(preco_str) if preco_str else Decimal("0")
