@@ -120,6 +120,9 @@ def main():
             app.aba_distribuicao._atualizar_ui(p, None, d, 5.1)
             app.tabview.set("📈  Dashboard Geral")
             capture(root, "01_dashboard.png", target)
+            app.aba_distribuicao._det_canvas.xview_moveto(1.0)
+            capture(root, "06_dashboard_colunas_finais.png", target)
+            app.aba_distribuicao._det_canvas.xview_moveto(0.0)
 
             app.tabview.set("📊  Análise por Período")
             app.aba_analise.atualizar()
@@ -133,6 +136,9 @@ def main():
             hist = item._apurar_valor_historico()
             assert hist["patrimonio_total"] == Decimal("2180")
             capture(root, "03_patrimonio_historico.png", target)
+            app.aba_analise._conteudo_rolavel._parent_canvas.yview_moveto(1.0)
+            capture(root, "07_extrato_financeiro_rolagem.png", target)
+            app.aba_analise._conteudo_rolavel._parent_canvas.yview_moveto(0.0)
 
             app.tabview.set("💰  Caixa (USD/BRL)")
             hist_usdt = eng.calcular_saldo_usdt(dm.carregar_operacoes())
@@ -152,7 +158,7 @@ def main():
             capture(root, "05_registrar_operacao_taxa.png", target)
 
             report = (
-                "# Capturas reais da interface — FIN-05\n\n"
+                "# Capturas reais da interface — UI-01\n\n"
                 "Screenshots produzidos automaticamente pela aplicação **CustomTkinter real** "
                 "na execução de testes Windows do GitHub Actions.\n\n"
                 "**DADOS FICTÍCIOS**: operações artificiais e cotações simuladas; "
@@ -161,8 +167,10 @@ def main():
                 "2. Análises por ativo/período: BTC, ETH, SOL, LINK, inclusive posições encerradas.\n"
                 "3. Patrimônio histórico: avaliação 30/09/2026 com fechamento ETH=1000 USDT de teste.\n"
                 "4. Caixa: entradas e saldos USDT/USDC separados.\n"
-                "5. Registrar operação: campo opcional de corretagem em USDT.\n\n"
-                "**Em desenvolvimento:** refinamento visual, rentabilidade consolidada, "
+                "5. Registrar operação: campo opcional de corretagem em USDT.\n"
+                "6. Dashboard rolado horizontalmente: colunas finais preservadas.\n"
+                "7. Análise rolada verticalmente: extrato financeiro acessível.\n\n"
+                "**Em desenvolvimento:** revisão final de contraste e acabamento, "
                 "atualizador, atalho, modo bandeja e instalador ainda não concluídos.\n"
             )
             (target / "README.md").write_text(report, encoding="utf-8")
