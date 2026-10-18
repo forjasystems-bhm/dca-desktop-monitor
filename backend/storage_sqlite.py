@@ -125,9 +125,15 @@ class ArmazemSQLite:
 
     def _conectar(self):
         conn = sqlite3.connect(str(self.arquivo_db), timeout=20, isolation_level=None)
-        conn.execute("PRAGMA busy_timeout=20000")
-        conn.execute("PRAGMA synchronous=FULL")
-        return conn
+        try:
+            conn.execute("PRAGMA busy_timeout=20000")
+            conn.execute("PRAGMA synchronous=FULL")
+            return conn
+        except Exception:
+            # Windows holds SQLite files while a handle is open. Corrupt
+            # database pragmas must not leak a connection or lock the file.
+            conn.close()
+            raise
 
     def _inicializar(self):
         conn = self._conectar()
