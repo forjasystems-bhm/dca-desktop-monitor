@@ -280,23 +280,39 @@ class PortfolioDCA:
         def worker():
             try:
                 self._atualizar_status("⟳ Atualizando preços na Binance...", CYAN)
-                sucesso = self.price_manager.atualizar_precos(MOEDAS_SUPORTADAS)
-                if not sucesso:
-                    raise ConnectionError("Sem resposta da Binance")
-                self._atualizar_status("⚙ Calculando portfólio...", CYAN)
-                self.janela.after(0, self._atualizar_abas_seguro)
-            except Exception:
-                self._atualizar_status("✕ Erro de conexão com a API", "#ff4d4d")
+                # Mesmo que falhe UMA cotação, o Dashboard deve ser recalculado
+                # para sinalizar posições indisponíveis, nunca manter número velho.
+                moedas = list(dict.fromkeys(MOEDAS_SUPORTADAS))
+                if "USDC" not in moedas:
+                    operacoes = self.data_manager.carregar_operacoes_precisas()
+                    if any(str(op["Moeda"]).upper() == "USDC" for op in operacoes):
+                        moedas.append("USDC")
+                sucesso = self.price_manager.atualizar_precos(moedas)
+                self.janela.after(
+                    0, lambda ok=sucesso: self._atualizar_abas_seguro(ok)
+                )
+            except Exception as exc:
+                logger.exception("Falha no ciclo de atualização: %s", exc)
+                self._atualizar_status(
+                    "✕ Não foi possível atualizar; verificar dados e rede",
+                    "#ff4d4d"
+                )
                 self.janela.after(0, self._reiniciar_countdown)
 
         threading.Thread(target=worker, daemon=True).start()
 
-    def _atualizar_abas_seguro(self):
+    def _atualizar_abas_seguro(self, precos_completos=True):
         try:
             self.aba_distribuicao.atualizar()
             self.aba_analise.atualizar()
             self.aba_caixa.atualizar()
-            self._atualizar_status("✓ Atualizado!", NEON_GREEN)
+            if precos_completos:
+                self._atualizar_status("✓ Cotações atualizadas", NEON_GREEN)
+            else:
+                self._atualizar_status(
+                    "⚠ Cotação indisponível: resultados parciais bloqueados",
+                    "#e3b341",
+                )
         except Exception:
             self._atualizar_status("⚠ Erro ao atualizar interface.", "#e3b341")
         finally:
