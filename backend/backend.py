@@ -39,6 +39,7 @@ class DataManager:
             self.arquivo_csv,
         )
         self.arquivo_db = self._store.arquivo_db
+        self.ultimo_erro = None
 
     def criar_arquivo_se_necessario(self):
         # Compatibilidade: banco já inicializado no construtor.
@@ -58,26 +59,41 @@ class DataManager:
     def exportar_csv(self, destino: str) -> None:
         self._store.exportar_csv(Path(destino))
 
-    def excluir_operacao(self, indice: int) -> bool:
+    def _executar_mutacao(self, descricao: str, operacao):
+        from backend.operation_integrity import ErroIntegridadeFinanceira
+        from backend.storage_sqlite import ErroArmazenamento
+
+        self.ultimo_erro = None
         try:
-            return self._store.excluir(indice)
-        except Exception:
-            logger.exception("Falha ao excluir operação; banco preservado")
+            sucesso = operacao()
+            if not sucesso:
+                self.ultimo_erro = "Operação não encontrada; recarregue o histórico."
+            return sucesso
+        except (ErroIntegridadeFinanceira, ErroArmazenamento) as exc:
+            self.ultimo_erro = str(exc)
+            logger.warning("%s rejeitada: %s", descricao, exc)
             return False
+        except Exception:
+            self.ultimo_erro = (
+                "Falha inesperada de gravação. Os dados anteriores foram preservados."
+            )
+            logger.exception("Falha ao %s; transação revertida", descricao)
+            return False
+
+    def excluir_operacao(self, indice: int) -> bool:
+        return self._executar_mutacao(
+            "excluir", lambda: self._store.excluir(indice)
+        )
 
     def atualizar_operacao(self, indice: int, nova_operacao: Dict) -> bool:
-        try:
-            return self._store.substituir(indice, nova_operacao)
-        except Exception:
-            logger.exception("Falha ao atualizar operação; banco preservado")
-            return False
+        return self._executar_mutacao(
+            "alterar", lambda: self._store.substituir(indice, nova_operacao)
+        )
 
     def salvar_operacao(self, operacao: List) -> bool:
-        try:
-            return self._store.inserir(operacao)
-        except Exception:
-            logger.exception("Falha ao salvar operação; banco preservado")
-            return False
+        return self._executar_mutacao(
+            "salvar", lambda: self._store.inserir(operacao)
+        )
 
 class PriceManager:
     """Cache de cotações com validade e estado explícitos.
