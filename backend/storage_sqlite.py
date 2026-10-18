@@ -247,14 +247,36 @@ class ArmazemSQLite:
         row = con.execute("SELECT id FROM operacoes ORDER BY id LIMIT 1 OFFSET ?", (indice,)).fetchone()
         return row[0] if row else None
 
+    @staticmethod
+    def _livro_transacional(con) -> list[dict]:
+        """Estado completo lido sob o lock de gravação da MESMA transação."""
+        linhas = con.execute(
+            "SELECT data, moeda, operacao, valor_usdt, preco, quantidade, taxa_brl "
+            "FROM operacoes ORDER BY id"
+        ).fetchall()
+        return [dict(zip(COLUNAS, linha)) for linha in linhas]
+
+    def diagnostico_livro_legado(self) -> dict:
+        """Relatório apenas consultivo: importação CSV NÃO reescreve nem rejeita legado."""
+        from backend.operation_integrity import validar_livro, ErroIntegridadeFinanceira
+        historico = self.listar_preciso()
+        try:
+            validar_livro(historico)
+        except ErroIntegridadeFinanceira as exc:
+            return {"consistente": False, "erro": str(exc), "registros": len(historico)}
+        return {"consistente": True, "erro": None, "registros": len(historico)}
+
     def inserir(self, valores: list) -> bool:
         if len(valores) != len(COLUNAS):
             raise ErroArmazenamento("Quantidade incorreta de campos.")
         row = _validar(dict(zip(COLUNAS, valores)), 0)
         self._conferir_origem()
+        from backend.operation_integrity import validar_livro
         con = self._conectar()
         try:
             con.execute("BEGIN IMMEDIATE")
+            livro = self._livro_transacional(con)
+            validar_livro(livro + [row])
             self._inserir(con, row)
             con.execute("COMMIT")
             return True
@@ -275,6 +297,16 @@ class ArmazemSQLite:
             if id_operacao is None:
                 con.execute("ROLLBACK")
                 return False
+            from backend.operation_integrity import validar_livro
+            livro = self._livro_transacional(con)
+            if livro[indice]["Moeda"].upper() != row["Moeda"].upper():
+                from backend.operation_integrity import ErroIntegridadeFinanceira
+                raise ErroIntegridadeFinanceira(
+                    "A moeda de uma operação existente não pode ser alterada. "
+                    "Exclua e registre novamente após verificar os saldos."
+                )
+            livro[indice] = row
+            validar_livro(livro)
             con.execute(
                 "UPDATE operacoes SET data=?, moeda=?, operacao=?, valor_usdt=?, "
                 "preco=?, quantidade=?, taxa_brl=? WHERE id=?",
@@ -297,6 +329,10 @@ class ArmazemSQLite:
             if id_operacao is None:
                 con.execute("ROLLBACK")
                 return False
+            from backend.operation_integrity import validar_livro
+            livro = self._livro_transacional(con)
+            del livro[indice]
+            validar_livro(livro)
             con.execute("DELETE FROM operacoes WHERE id=?", (id_operacao,))
             con.execute("COMMIT")
             return True
