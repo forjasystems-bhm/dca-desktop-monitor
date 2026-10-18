@@ -33,8 +33,9 @@ Visão geral da interface, mostrando o DASHBOARD >>
 ## 🛠️ Tecnologias Utilizadas
 
 *   **Python 3**
-*   **Tkinter** para a interface gráfica (GUI).
-*   **ttkthemes** para modernizar o visual da aplicação.
+*   **CustomTkinter/Tkinter** para a interface desktop.
+*   **SQLite** para histórico financeiro, auditoria, dados locais e backups.
+*   **pystray/Pillow** para bandeja opcional do Windows.
 *   **CCXT** para integração com a API da Binance e busca de preços.
 
 ## 📁 Estrutura do Projeto
@@ -92,7 +93,7 @@ Siga os passos abaixo para executar o projeto em sua máquina local.
 
 1.  **Clone o repositório:**
     ```bash
-    git clone https://github.com/BRUNO1993-CIBER/dca-desktop-monitor.git
+    git clone https://github.com/tiolusystems/dca-desktop-monitor.git
     cd dca-desktop-monitor
     ```
 
@@ -117,27 +118,25 @@ Siga os passos abaixo para executar o projeto em sua máquina local.
     ```bash
     python main.pyw
     ```
-    Na primeira execução, um arquivo chamado `meu_diario_operacoes.csv` será criado automaticamente para armazenar suas transações.
+    Na primeira execução, o aplicativo cria um SQLite local e oferece escolher o CSV antigo, declarar saldos existentes ou iniciar vazio. Não cria operações fictícias nem regrava o CSV original.
 
-### 🖥️ Criar Atalho no Sistema (Opcional)
+### 🖥️ Recursos Windows — ainda sem distribuição
 
-Após instalar as dependências, você pode criar um atalho clicável no seu sistema operacional para abrir o app sem precisar do terminal.
+O painel **Aplicativo / Configurações** prepara os seguintes recursos: verificar versões estáveis pelo canal oficial, criar atalho da versão **instalada** (não preview), optar por manter o monitor na bandeja do Windows e verificar/preparar uma restauração SQLite.
 
-Com o ambiente virtual **ativado**, execute:
+**O instalador e o atualizador de executáveis não estão publicados nem habilitados.** O botão **Atualizar agora** permanece desabilitado até que um pacote autêntico, assinado ou validado por uma cadeia de confiança aprovada, esteja disponível e a homologação tenha ocorrido.
 
-```bash
-python config/install.py
-```
+Scripts de desenvolvimento (`config/install.py`) não substituem a instalação Windows gerenciada. Não se deve distribuir um atalho que aponte para um checkout temporário ou pasta de testes.
 
-**Windows** — cria um atalho `.lnk` na Área de Trabalho com o ícone do app:
-- Clique duplo no atalho para abrir
-- Para fixar na barra de tarefas: clique direito no atalho → **Fixar na barra de tarefas**
+## 📚 Gates de pré-homologação
 
-**Linux** — cria uma entrada `.desktop` no menu de aplicativos (`~/.local/share/applications/`):
-- Procure por **Portfolio DCA Monitor** no menu de aplicativos
-- Para fixar no dock: clique direito → **Adicionar aos favoritos** (GNOME/KDE)
+- [Migração e primeiro uso](docs/PRIMEIRO_USO_E_MIGRACAO.md)
+- [Conciliação, custódia e recuperação](docs/PRE01_CONCILIACAO_RECUPERACAO.md)
+- [Controles desktop](docs/DESK01_CONTROLES_WINDOWS.md)
+- [Contrato financeiro e prioridades](docs/DCA-00_CONTRATO_E_PRIORIDADES.md) — documento de referência na PR #3
+- [Teste pré-CSV em andamento](docs/QA02_PRE_HOMOLOGACAO.md)
 
-> **Importante:** execute o script com o ambiente virtual ativado para que o atalho aponte para o Python correto com todas as dependências instaladas.
+**Não importar o único CSV real nem disponibilizar executável antes de concluir a homologação em uma cópia.**
 
 ## 📜 Licença
 
