@@ -198,6 +198,22 @@ class JanelaEdicao(ctk.CTkFrame):
             widget.grid(row=1, column=i, padx=10, sticky="ew")
             self._campos[col] = widget
 
+        ctk.CTkLabel(
+            form, text="Taxa corretagem (USDT) · opcional",
+            font=_f(_F_CARD_SUB), text_color=TEXT_SECONDARY,
+        ).grid(row=2, column=0, columnspan=2, sticky="e", padx=10, pady=(14, 4))
+        self._campo_corretagem = ctk.CTkEntry(
+            form, width=150, font=_f(_F_CARD_VAL),
+            fg_color=BG_INPUT, text_color=TEXT_PRIMARY, border_color=BORDER,
+        )
+        self._campo_corretagem.grid(
+            row=2, column=2, sticky="w", padx=10, pady=(14, 4)
+        )
+        ctk.CTkLabel(
+            form, text="Em branco = não informada; 0 = taxa confirmada zero",
+            font=_f(_F_CARD_SUB), text_color=TEXT_SECONDARY,
+        ).grid(row=2, column=3, columnspan=4, sticky="w", padx=8, pady=(14, 4))
+
     def _build_obs(self) -> None:
         obs = ctk.CTkFrame(self, fg_color="#1f1208", border_color="#7a4200", border_width=1)
         obs.pack(fill="x", padx=10, pady=(0, 4))
@@ -357,6 +373,10 @@ class JanelaEdicao(ctk.CTkFrame):
         operacoes = self._data_manager.carregar_operacoes()
         self._op_original = operacoes[self._indice_editando]
 
+        self._campo_corretagem.delete(0, "end")
+        fee = self._op_original.get("Taxa_Corretagem_USDT")
+        if fee is not None and str(fee).strip():
+            self._campo_corretagem.insert(0, str(fee))
         for col, valor in zip(self._data_manager.headers, valores):
             widget = self._campos[col]
 
@@ -409,6 +429,8 @@ class JanelaEdicao(ctk.CTkFrame):
                     nova_op[col] = widget.get().strip()
 
             nova_op["Taxa_BRL"] = taxa_brl
+            taxa_usdt = self._campo_corretagem.get().strip()
+            nova_op["Taxa_Corretagem_USDT"] = taxa_usdt or None
 
             if self._data_manager.atualizar_operacao(self._indice_editando, nova_op):
                 messagebox.showinfo("Sucesso", "Transação atualizada com sucesso!")
@@ -449,6 +471,7 @@ class JanelaEdicao(ctk.CTkFrame):
                 )
 
     def _limpar_form(self) -> None:
+        self._campo_corretagem.delete(0, "end")
         for col, widget in self._campos.items():
             if isinstance(widget, ctk.CTkComboBox):
                 widget.configure(state="readonly")
