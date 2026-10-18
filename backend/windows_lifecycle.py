@@ -61,7 +61,7 @@ def planejar_atualizacao_sem_executar(pasta_app: Path, banco: Path,
 def comparar_versoes(versao_atual: str, versao_nova: str) -> dict:
     """Reject downgrades, nonnumeric tags and no-op update."""
     def parse(v):
-        if not re.fullmatch(r"[0-9]+(?:\\.[0-9]+){2}", str(v)):
+        if not re.fullmatch(r"[0-9]+(?:\.[0-9]+){2}", str(v)):
             raise ErroCicloWindows("Versão deve ser no formato MAJOR.MINOR.PATCH.")
         return tuple(int(x) for x in v.split("."))
     atual,nova=parse(versao_atual),parse(versao_nova)
