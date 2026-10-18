@@ -14,7 +14,9 @@ def abrir_carteira_local(*, data_factory=None, price_factory=None):
     """
     if data_factory is None:
         from backend.backend import DataManager
-        data_factory = DataManager
+        # A distribuição não deve importar um CSV empacotado, de exemplo,
+        # nem presumir onde ficava a versão antiga. O usuário escolhe o arquivo.
+        data_factory = lambda: DataManager(auto_import_legacy=False)
     if price_factory is None:
         from backend.backend import PriceManager
         price_factory = PriceManager
@@ -27,6 +29,9 @@ def abrir_carteira_local(*, data_factory=None, price_factory=None):
             "Nenhum registro foi apagado ou substituído. "
             "Confira o banco SQLite e a cópia do CSV antes de continuar."
         )
+    # Backup diário verificado antes de disponibilizar o banco ao usuário.
+    from backend.backup_policy import garantir_backup_diario
+    garantir_backup_diario(data_mgr.arquivo_db)
     # Must not call .atualizar_precos(), .fetch_ticker(), or historical API.
     price_mgr = price_factory()
     return data_mgr, price_mgr
