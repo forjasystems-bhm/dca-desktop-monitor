@@ -24,7 +24,13 @@ def patrimonio_historico_na_data(
     """
     validar_data_encerrada(data_ref, hoje_utc)
     transacoes = armazem.listar_preciso()
-    analise = calcular_analise_por_periodo(transacoes, fim=data_ref)
+    iniciais = (
+        armazem.listar_posicoes_iniciais()
+        if hasattr(armazem, "listar_posicoes_iniciais") else []
+    )
+    analise = calcular_analise_por_periodo(
+        transacoes, fim=data_ref, saldos_iniciais=iniciais,
+    )
     cotacoes = armazem.ler_cotacoes_historicas(data_ref)
     itens = {}
     ausentes = []
@@ -41,7 +47,9 @@ def patrimonio_historico_na_data(
         elif quantidade > ZERO:
             preco = cotacao["preco"]
             valor = quantidade * preco
-            nao_realizado = valor - custo
+            nao_realizado = (
+                None if ativo in analise["ativos_sem_custo"] else valor - custo
+            )
             mercado_aberto += valor
             custo_aberto += custo
         else:
@@ -78,7 +86,7 @@ def patrimonio_historico_na_data(
 
     # Reconstrução do saldo em USDT APENAS até o dia analisado.
     # Este histórico considera as operações do CSV legado, sem inferir taxas.
-    caixa = ZERO
+    caixa = analise["saldo_usdt_inicial"]
     from backend.trading_fees import taxa_da_operacao
     for op in transacoes:
         if date.fromisoformat(str(op["Data"])[:10]) > data_ref:
@@ -113,7 +121,8 @@ def patrimonio_historico_na_data(
     completo = not alertas
     total = caixa + mercado_aberto if completo else None
     lucro_nr = (
-        mercado_aberto - custo_aberto if completo and quantidade_usdc <= ZERO
+        mercado_aberto - custo_aberto
+        if completo and not analise["base_de_custo_incompleta"]
         else None
     )
 
@@ -129,7 +138,7 @@ def patrimonio_historico_na_data(
         "patrimonio_total": total,
         "lucro_nao_realizado": lucro_nr,
         "lucro_realizado": analise["totais"]["realizado_historico"],
-        "base_de_custo_incompleta": quantidade_usdc > ZERO,
+        "base_de_custo_incompleta": analise["base_de_custo_incompleta"],
         "saldo_usdc": quantidade_usdc,
         "operacoes_sem_taxa_documentada": analise["operacoes_sem_taxa_documentada"],
         "resultado_total": (
