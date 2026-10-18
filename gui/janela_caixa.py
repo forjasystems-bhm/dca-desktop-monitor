@@ -331,6 +331,10 @@ class JanelaCaixa(ctk.CTkFrame):
             info = self._engine.calcular_saldo_usdt(ops)
             from backend.stablecoin_ledger import saldos_stablecoins
             stable = saldos_stablecoins(ops)
+            stable["origem_usdc_legada"] = (
+                self._data_manager._store.quantidade_usdc_de_origem_legada()
+                if hasattr(self._data_manager, "_store") else 0
+            )
             self.after(0, lambda: self._atualizar_ui(info, stable))
         except Exception as e:
             self.after(0, lambda: self.lbl_status.configure(text="✕ erro", text_color=NEON_RED))
@@ -345,9 +349,16 @@ class JanelaCaixa(ctk.CTkFrame):
                 text=f"USDC: {usdc:,.2f} unidades — saldo independente",
                 text_color=NEON_GREEN if usdc >= 0 else NEON_RED,
             )
+            legado = stable.get("origem_usdc_legada", 0)
+            aviso = (
+                f"  |  ⚠ {legado} operações USDC antigas: "
+                "confirmar origem (transferência ou troca)"
+                if legado else ""
+            )
             self.lbl_fluxo_usdc.configure(
                 text=f"USDC recebido: {entrou:,.2f}  |  enviado: {saiu:,.2f}  "
-                     "· Não convertido em USDT",
+                     "· Não convertido em USDT" + aviso,
+                text_color=YELLOW if legado else TEXT_SECONDARY,
             )
         s_atual = info["saldo_atual"]
         hist    = info["historico"]
