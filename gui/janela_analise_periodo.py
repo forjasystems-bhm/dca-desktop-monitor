@@ -329,11 +329,14 @@ class JanelaAnalisePeriodo(ctk.CTkFrame):
                     if pl_nao is not None else "Não apurado"
                 )
                 texto = (
-                    f"Patrimônio em {dia}: {valor}  |  "
-                    f"P/L realizado: {self._valor(resultado['lucro_realizado'])} USDT"
-                    f"  |  P/L não realizado: {nr}  |  P/L total: {total}"
-                    f"  |  Caixa USDT: {self._valor(resultado['caixa_usdt'])}"
-                    f"  |  USDC: {self._valor(resultado['saldo_usdc'])} unidades"
+                    f"Patrimônio em {dia}: {valor}. "
+                    + (
+                        "Resultado total não apurado por falta de custo documentado "
+                        "do USDC. Consulte os indicadores abaixo."
+                        if pl_total is None else
+                        "Fechamento diário UTC registrado no SQLite. "
+                        "Detalhamento abaixo."
+                    )
                 )
                 cor = CYAN if pl_total is None else NEON_GREEN
             else:
@@ -363,8 +366,9 @@ class JanelaAnalisePeriodo(ctk.CTkFrame):
             return
         janela = ctk.CTkToplevel(self)
         janela.title(f"DCA — Ativos em {resultado['data_utc']} (USDT)")
-        janela.geometry("1160x420")
-        janela.minsize(850, 300)
+        largura = min(1160, max(760, self.winfo_screenwidth() - 50))
+        janela.geometry(f"{largura}x420")
+        janela.minsize(min(760, largura), 300)
         ctk.CTkLabel(
             janela,
             text=f"PATRIMÔNIO HISTÓRICO POR ATIVO · {resultado['data_utc']} · USDT",
