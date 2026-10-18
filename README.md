@@ -133,7 +133,7 @@ Scripts de desenvolvimento (`config/install.py`) não substituem a instalação 
 - [Migração e primeiro uso](docs/PRIMEIRO_USO_E_MIGRACAO.md)
 - [Conciliação, custódia e recuperação](docs/PRE01_CONCILIACAO_RECUPERACAO.md)
 - [Controles desktop](docs/DESK01_CONTROLES_WINDOWS.md)
-- [Contrato financeiro e prioridades](docs/DCA-00_CONTRATO_E_PRIORIDADES.md) — documento de referência na PR #3
+- [Contrato financeiro e prioridades — PR #3](https://github.com/tiolusystems/dca-desktop-monitor/pull/3)
 - [Teste pré-CSV em andamento](docs/QA02_PRE_HOMOLOGACAO.md)
 
 **Não importar o único CSV real nem disponibilizar executável antes de concluir a homologação em uma cópia.**
