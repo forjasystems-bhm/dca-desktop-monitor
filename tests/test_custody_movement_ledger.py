@@ -151,6 +151,19 @@ class MovimentacaoCustodiaTests(unittest.TestCase):
         self.assertEqual(self.legacy.read_bytes(),self.old_bytes)
         self.assertEqual(len(reopened.carregar_operacoes_precisas()),3)
 
+    def test_changing_opening_units_after_transfer_fails_atomically(self):
+        self.mover(quantidade="0.2",taxa_ativo="0.01")
+        before=self.dm.carregar_posicoes_externas()
+        with self.assertRaises(ErroMovimentacaoCustodia):
+            self.dm.corrigir_posicao(
+                origem="externa",moeda="BTC",custodia="Cold wallet",
+                quantidade="0.1",custo_total_usdt="40",
+                motivo="Conferência posterior da carteira",
+            )
+        self.assertEqual(self.dm.carregar_posicoes_externas(),before)
+        self.assertEqual(self.dm.carregar_auditoria_posicoes(),[])
+        self.assertEqual(len(self.dm.carregar_movimentos_custodia()),1)
+
     def test_ledger_fee_transfer_cannot_be_hidden_as_zero(self):
         with self.assertRaises(Exception):
             self.mover(taxa_ativo="")
