@@ -559,18 +559,36 @@ if __name__ == "__main__":
             Path(sys.argv[2]), Path(sys.argv[3])
         )
         sys.exit(0 if status else 1)
-    ctk.set_appearance_mode("dark")
-    ctk.set_default_color_theme("dark-blue")
+    from backend.single_instance import TravaInstancia, OutraInstanciaAberta
+    from backend.storage_sqlite import diretorio_dados_padrao
+    trava=TravaInstancia(diretorio_dados_padrao())
+    try:
+        trava.adquirir()
+    except OutraInstanciaAberta as exc:
+        from tkinter import Tk, messagebox
+        aviso=Tk()
+        aviso.withdraw()
+        try:
+            messagebox.showinfo("DCA Monitor já em execução",str(exc),parent=aviso)
+        finally:
+            aviso.destroy()
+        sys.exit(0)
 
-    root_principal = ctk.CTk()
-    root_principal.withdraw()
+    try:
+        ctk.set_appearance_mode("dark")
+        ctk.set_default_color_theme("dark-blue")
 
-    def criar_app(data_mgr, price_mgr):
-        root_principal.app = PortfolioDCA(
-            janela=root_principal,
-            data_manager=data_mgr,
-            price_manager=price_mgr,
-        )
+        root_principal = ctk.CTk()
+        root_principal.withdraw()
 
-    JanelaSplash(root_principal, criar_app_callback=criar_app)
-    root_principal.mainloop()
+        def criar_app(data_mgr, price_mgr):
+            root_principal.app = PortfolioDCA(
+                janela=root_principal,
+                data_manager=data_mgr,
+                price_manager=price_mgr,
+            )
+
+        JanelaSplash(root_principal, criar_app_callback=criar_app)
+        root_principal.mainloop()
+    finally:
+        trava.liberar()
