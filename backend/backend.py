@@ -146,10 +146,16 @@ class PriceManager:
         idade = (agora - instante).total_seconds()
         return 0 <= idade <= max_age
 
+    def invalidar_cotacoes(self, moedas: List[str]) -> None:
+        """A rede falhou: cache permanece para diagnóstico, não para avaliação."""
+        self.falhas_cotacao.update(
+            str(m).upper() for m in moedas if str(m).upper() != "USDT"
+        )
+        self._brl_falhou = True
+
     def atualizar_precos(self, moedas: List[str]) -> bool:
         if not self.exchange:
-            self.falhas_cotacao.update(m.upper() for m in moedas if m.upper() != "USDT")
-            self._brl_falhou = True
+            self.invalidar_cotacoes(moedas)
             return False
 
         sucesso = True
