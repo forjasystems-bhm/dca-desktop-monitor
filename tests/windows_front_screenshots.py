@@ -202,6 +202,13 @@ def main():
             assert fresh.carregar_operacoes_precisas() == []
             assert assistente._btn_importar.cget("state") == "disabled"
             capture(janela_inicio, "10_primeiro_uso_selecao.png", target)
+            assistente._externo_flag.set(True)
+            assistente._motivo_correcao.insert(
+                0, "Divergência documental de quantidade na custódia"
+            )
+            render(janela_inicio)
+            assert assistente._externo_flag.get()
+            capture(janela_inicio, "11_conciliacao_saldo_fora_csv.png", target)
             janela_inicio.destroy()
             render(root)
             print("FRONT_CAPTURE=PASS", flush=True)
