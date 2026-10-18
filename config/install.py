@@ -19,33 +19,63 @@ ICON_FILE = BASE_DIR / "img" / "favicon.ico"
 APP_NAME = "Portfolio DCA Monitor"
 
 
+def preparar_atalho_windows(
+    destino: Path, *, executavel: Path | None = None, script: Path | None = None,
+    icone: Path | None = None,
+) -> str:
+    """Somente prepara o comando; não cria atalho nem instala nada."""
+    executable = Path(executavel) if executavel else (
+        Path(sys.executable) if getattr(sys, "frozen", False)
+        else (Path(sys.executable).parent / "pythonw.exe")
+    )
+    if not executable.is_file():
+        raise FileNotFoundError(f"Executável não encontrado: {executable}")
+    src = Path(script) if script else MAIN_PYW
+    icon = Path(icone) if icone else ICON_FILE
+    destination = Path(destino)
+    if destination.suffix.lower() != ".lnk":
+        raise ValueError("Atalho Windows deve terminar com .lnk")
+    def ps(text):
+        return "'" + str(text).replace("'", "''") + "'"
+
+    code = [
+        "$sh = New-Object -ComObject WScript.Shell",
+        f"$lnk = $sh.CreateShortcut({ps(destination)})",
+        f"$lnk.TargetPath = {ps(executable)}",
+        f"$lnk.WorkingDirectory = {ps(executable.parent if getattr(sys, 'frozen', False) else BASE_DIR)}",
+        f"$lnk.IconLocation = {ps(icon)}",
+        "$lnk.Description = 'DCA Monitor - carteira local'",
+    ]
+    if not getattr(sys, "frozen", False):
+        if not src.is_file():
+            raise FileNotFoundError(f"Script Python não encontrado: {src}")
+        code.append(f"$lnk.Arguments = {ps('"' + str(src) + '"')}")
+    code.append("$lnk.Save()")
+    return "\n".join(code)
+
+
 def install_windows() -> None:
-    pythonw = Path(sys.executable).parent / "pythonw.exe"
-    if not pythonw.exists():
-        pythonw = Path(sys.executable)
-
-    desktop  = Path.home() / "Desktop"
+    """Somente quando o usuário pedir; não faz parte do primeiro boot."""
+    desktop = Path.home() / "Desktop"
     shortcut = desktop / f"{APP_NAME}.lnk"
-
-    ps = f"""
-$sh = New-Object -ComObject WScript.Shell
-$lnk = $sh.CreateShortcut('{shortcut}')
-$lnk.TargetPath       = '{pythonw}'
-$lnk.Arguments        = '"{MAIN_PYW}"'
-$lnk.IconLocation     = '{ICON_FILE}'
-$lnk.WorkingDirectory = '{BASE_DIR}'
-$lnk.Description      = '{APP_NAME} — Monitor de Portfolio DCA de Criptomoedas'
-$lnk.Save()
-"""
-    result = subprocess.run(["powershell", "-Command", ps], capture_output=True)
-    if result.returncode == 0:
-        print(f"Atalho criado em: {shortcut}")
-        print()
-        print("Para fixar na barra de tarefas:")
-        print("  Clique direito no atalho da area de trabalho -> Fixar na barra de tarefas")
-    else:
-        print("Erro ao criar atalho:")
-        print(result.stderr.decode())
+    if shortcut.exists():
+        print(f"O atalho já existe: {shortcut}")
+        return
+    if not desktop.is_dir():
+        raise FileNotFoundError(
+            "Pasta Desktop não encontrada. Se estiver no OneDrive, "
+            "selecione o destino ao criar o atalho."
+        )
+    script = preparar_atalho_windows(shortcut)
+    result = subprocess.run(
+        ["powershell", "-NoProfile", "-NonInteractive", "-Command", script],
+        capture_output=True, text=True, timeout=30,
+    )
+    if result.returncode != 0 or not shortcut.is_file():
+        raise RuntimeError(
+            "Falha ao criar o atalho: " + (result.stderr or "sem confirmação")
+        )
+    print(f"Atalho criado em: {shortcut}")
 
 
 def install_linux() -> None:
