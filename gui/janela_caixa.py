@@ -135,7 +135,8 @@ class JanelaCaixa(ctk.CTkFrame):
         self.lbl_saldo_usdc.pack(anchor="w", pady=(5, 0))
         self.lbl_fluxo_usdc = ctk.CTkLabel(
             left, text="USDC independente: sem conversão 1:1",
-            font=_F_STATUS, text_color=TEXT_SECONDARY, anchor="w"
+            font=_F_STATUS, text_color=TEXT_SECONDARY, anchor="w",
+            wraplength=660, justify="left",
         )
         self.lbl_fluxo_usdc.pack(anchor="w", pady=(2, 0))
 
@@ -247,9 +248,12 @@ class JanelaCaixa(ctk.CTkFrame):
         self._configure_tree_tags()
 
         sb = ttk.Scrollbar(container, orient="vertical", command=self.tree.yview)
-        self.tree.configure(yscrollcommand=sb.set)
+        sx = ttk.Scrollbar(container, orient="horizontal", command=self.tree.xview)
+        self.tree.configure(yscrollcommand=sb.set, xscrollcommand=sx.set)
         sb.pack(side=tk.RIGHT, fill="y")
+        sx.pack(side=tk.BOTTOM, fill="x")
         self.tree.pack(fill="both", expand=True)
+        self._extrato_scroll_horizontal = sx
 
     def _configure_tree_style(self):
         style = ttk.Style()
@@ -283,7 +287,10 @@ class JanelaCaixa(ctk.CTkFrame):
         }
         for col, (text, anchor, width, stretch) in headings.items():
             self.tree.heading(col, text=text, anchor=anchor if anchor != "w" else "w")
-            self.tree.column(col, width=width, anchor=anchor, stretch=stretch)
+            self.tree.column(
+                col, width=width, minwidth=width,
+                anchor=anchor, stretch=False,
+            )
 
     def _configure_tree_tags(self):
         for tag, (fg, bg) in _TREE_TAGS.items():
