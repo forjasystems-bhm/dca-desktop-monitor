@@ -204,12 +204,11 @@ class JanelaEdicao(ctk.CTkFrame):
 
         linha1 = "⚠️  ATENÇÃO — EDIÇÃO MANUAL COM IMPACTO DIRETO NOS CÁLCULOS"
         linha2 = (
-            "O campo Moeda está bloqueado e não pode ser alterado: ele é usado diretamente pela API da Binance "
-            "para buscar cotações em tempo real — alterá-lo quebraria a busca de preços e corromperia todo o histórico "
-            "dessa posição. Caso precise corrigir a moeda, exclua a transação e registre-a novamente. "
-            "Os demais campos estão disponíveis para edição direta, porém Quantidade, Preço de Compra e Valor Total "
-            "são interdependentes: o sistema não recalcula automaticamente os demais ao alterar um deles. "
-            "Modificações inconsistentes entre esses valores comprometerão a precisão do DCA (Custo Médio) e do P&L realizado."
+            "A moeda da operação não pode ser modificada. Quantidade, Preço e Valor "
+            "são conferidos antes da gravação. Cada alteração ou exclusão também "
+            "revalida cronologicamente todos os saldos posteriores: vendas superiores "
+            "à posição e compras sem USDT serão recusadas. O CSV original permanece "
+            "preservado; divergências legadas exigem conciliação."
         )
 
         ctk.CTkLabel(
@@ -417,6 +416,12 @@ class JanelaEdicao(ctk.CTkFrame):
                 self._op_original     = None
                 self._on_change()
                 self.atualizar()
+            else:
+                messagebox.showerror(
+                    "Alteração rejeitada",
+                    getattr(self._data_manager, "ultimo_erro", None)
+                    or "A alteração tornaria o histórico inconsistente."
+                )
 
         except ValueError:
             messagebox.showerror(
@@ -436,6 +441,12 @@ class JanelaEdicao(ctk.CTkFrame):
                 self._op_original     = None
                 self._on_change()
                 self.atualizar()
+            else:
+                messagebox.showerror(
+                    "Exclusão rejeitada",
+                    getattr(self._data_manager, "ultimo_erro", None)
+                    or "Excluir este registro comprometeria saldos posteriores."
+                )
 
     def _limpar_form(self) -> None:
         for col, widget in self._campos.items():
