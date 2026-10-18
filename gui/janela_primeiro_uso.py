@@ -252,10 +252,15 @@ class JanelaPrimeiroUso(ctk.CTkScrollableFrame):
         ):
             return
         try:
-            self._db._store.informar_custo_inicial(
+            salvo = self._db._store.informar_custo_inicial(
                 vals["Ativo"], vals["Custódia"],
                 vals["Custo total USDT (opcional)"],
             )
+            if salvo.get("aviso_backup_sqlite"):
+                messagebox.showwarning(
+                    "Custo salvo, atenção ao backup",
+                    salvo["aviso_backup_sqlite"],
+                )
             self.atualizar()
             self._on_change()
         except Exception as exc:
