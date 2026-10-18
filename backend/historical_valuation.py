@@ -79,6 +79,7 @@ def patrimonio_historico_na_data(
     # Reconstrução do saldo em USDT APENAS até o dia analisado.
     # Este histórico considera as operações do CSV legado, sem inferir taxas.
     caixa = ZERO
+    from backend.trading_fees import taxa_da_operacao
     for op in transacoes:
         if date.fromisoformat(str(op["Data"])[:10]) > data_ref:
             continue
@@ -91,7 +92,8 @@ def patrimonio_historico_na_data(
             # Sem paridade implícita: valor nominal USDC não liquida caixa USDT.
             continue
         else:
-            caixa += -valor if tipo == "compra" else valor
+            taxa = taxa_da_operacao(op)
+            caixa += -(valor + taxa) if tipo == "compra" else valor - taxa
 
     alertas = []
     if ausentes:
@@ -129,6 +131,7 @@ def patrimonio_historico_na_data(
         "lucro_realizado": analise["totais"]["realizado_historico"],
         "base_de_custo_incompleta": quantidade_usdc > ZERO,
         "saldo_usdc": quantidade_usdc,
+        "operacoes_sem_taxa_documentada": analise["operacoes_sem_taxa_documentada"],
         "resultado_total": (
             analise["totais"]["realizado_historico"] + lucro_nr
             if lucro_nr is not None else None
