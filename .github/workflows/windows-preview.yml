@@ -45,6 +45,7 @@ jobs:
           if-no-files-found: error
           retention-days: 30
       - name: Build portable Windows preview
+        if: github.event_name == 'workflow_dispatch'
         shell: pwsh
         run: |
           python -m PyInstaller --noconfirm --clean --onedir --windowed --name DCA-Preview --collect-all customtkinter --add-data "config;config" --add-data "img;img" --add-data "db;db" main.pyw
@@ -63,6 +64,7 @@ jobs:
           Copy-Item "docs/COMO_TESTAR_PREVIEW.txt" "$app/LEIA-ME-ANTES-DE-ABRIR.txt"
           if (!(Test-Path "$dataDir/meu_diario_operacoes.csv")) { throw "Demo CSV not packaged" }
       - name: Upload temporary Windows preview
+        if: github.event_name == 'workflow_dispatch'
         uses: actions/upload-artifact@v4
         with:
           name: DCA-Integration-Internal-QA-Windows
