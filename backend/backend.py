@@ -4,6 +4,7 @@ import os
 from typing import Dict, List
 from collections import defaultdict
 import logging
+import math
 from decimal import Decimal, InvalidOperation
 from datetime import datetime, timezone, timedelta
 
@@ -115,7 +116,10 @@ class PriceManager:
     def _preco_positivo(valor):
         try:
             decimal = Decimal(str(valor))
-            return float(decimal) if decimal.is_finite() and decimal > 0 else None
+            if not decimal.is_finite() or decimal <= 0:
+                return None
+            preco = float(decimal)
+            return preco if math.isfinite(preco) and preco > 0 else None
         except (ValueError, InvalidOperation, TypeError, OverflowError):
             return None
 
@@ -210,7 +214,10 @@ class AnalysisEngine:
         """Rejeita ausente, zero, preço negativo e não finito."""
         try:
             dec = Decimal(str(valor))
-            return float(dec) if dec.is_finite() and dec > 0 else None
+            if not dec.is_finite() or dec <= 0:
+                return None
+            preco = float(dec)
+            return preco if math.isfinite(preco) and preco > 0 else None
         except (ValueError, InvalidOperation, TypeError, OverflowError):
             return None
 
