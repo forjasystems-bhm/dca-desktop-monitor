@@ -57,7 +57,13 @@ def preparar_atalho_windows(
 
 def install_windows() -> None:
     """Somente quando o usuário pedir; não faz parte do primeiro boot."""
-    desktop = Path.home() / "Desktop"
+    localizacao = subprocess.run(
+        ["powershell", "-NoProfile", "-NonInteractive", "-Command",
+         "[Environment]::GetFolderPath('Desktop')"],
+        capture_output=True, text=True, timeout=15,
+    )
+    escritorio = localizacao.stdout.strip() if localizacao.returncode == 0 else ""
+    desktop = Path(escritorio) if escritorio else Path.home() / "Desktop"
     shortcut = desktop / f"{APP_NAME}.lnk"
     if shortcut.exists():
         print(f"O atalho já existe: {shortcut}")
