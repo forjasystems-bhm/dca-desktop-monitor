@@ -83,6 +83,8 @@ def calcular_analise_por_periodo(
     saidas_usdc = ZERO
     saldo_usdc = ZERO
     registros = []
+    taxas_conhecidas = ZERO
+    taxas_nao_informadas = 0
     for linha, op in enumerate(operacoes, start=2):
         try:
             timestamp = datetime.strptime(str(op["Data"]), "%Y-%m-%d %H:%M:%S")
@@ -94,11 +96,18 @@ def calcular_analise_por_periodo(
             raise ErroAnaliseFinanceira(f"Registro {linha}: moeda ou operação inválida.")
         quantidade = _decimal(op, "Quantidade", linha)
         valor = _decimal(op, "Valor_USDT", linha)
-        registros.append((timestamp, linha, moeda, tipo, quantidade, valor))
+        from backend.trading_fees import taxa_da_operacao, taxa_informada
+        taxa = taxa_da_operacao(op)
+        if moeda not in ("USDT", "USDC"):
+            if taxa_informada(op):
+                taxas_conhecidas += taxa
+            else:
+                taxas_nao_informadas += 1
+        registros.append((timestamp, linha, moeda, tipo, quantidade, valor, taxa))
 
     # O índice conserva a ordem original para operações com o mesmo timestamp.
     registros.sort(key=lambda x: (x[0], x[1]))
-    for timestamp, linha, moeda, tipo, quantidade, valor in registros:
+    for timestamp, linha, moeda, tipo, quantidade, valor, taxa in registros:
         data_op = timestamp.date()
         if data_fim is not None and data_op > data_fim:
             continue
@@ -129,7 +138,7 @@ def calcular_analise_por_periodo(
         s = ativos[moeda]
         if tipo == "compra":
             s["quantidade"] += quantidade
-            s["custo_aberto"] += valor
+            s["custo_aberto"] += valor + taxa
             s["compras_historicas"] += valor
             if dentro:
                 s["compras_periodo"] += valor
@@ -140,7 +149,7 @@ def calcular_analise_por_periodo(
                     f"Registro {linha}: venda de {moeda} excede a posição disponível."
                 )
             custo_venda = s["custo_aberto"] * quantidade / s["quantidade"]
-            realizado = valor - custo_venda
+            realizado = valor - taxa - custo_venda
             s["quantidade"] -= quantidade
             s["custo_aberto"] -= custo_venda
             if s["quantidade"] == ZERO:
@@ -167,6 +176,8 @@ def calcular_analise_por_periodo(
         "entradas_periodo_usdc": entradas_usdc,
         "saidas_periodo_usdc": saidas_usdc,
         "saldo_usdc": saldo_usdc,
+        "taxas_registradas_usdt": taxas_conhecidas,
+        "operacoes_sem_taxa_documentada": taxas_nao_informadas,
         "observacao_usdc": (
             "USDC movimentado independentemente; depósitos e saques não são "
             "compras e vendas realizadas em USDT."
