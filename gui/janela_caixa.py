@@ -335,9 +335,12 @@ class JanelaCaixa(ctk.CTkFrame):
     def _worker_atualizar(self):
         try:
             ops  = self._data_manager.carregar_operacoes()
-            info = self._engine.calcular_saldo_usdt(ops)
+            iniciais = self._data_manager.carregar_posicoes_iniciais()
+            info = self._engine.calcular_saldo_usdt(ops, saldos_iniciais=iniciais)
             from backend.stablecoin_ledger import saldos_stablecoins
             stable = saldos_stablecoins(ops)
+            from decimal import Decimal
+            stable['saldos']['USDC'] += sum((Decimal(str(x['Quantidade'])) for x in iniciais if x['Moeda'] == 'USDC'), Decimal('0'))
             stable["origem_usdc_legada"] = (
                 self._data_manager._store.quantidade_usdc_de_origem_legada()
                 if hasattr(self._data_manager, "_store") else 0
