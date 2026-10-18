@@ -111,3 +111,56 @@ def criar_backup_sqlite(banco: Path, destino: Path, *, motivo: str = "manual") -
         temporario.unlink(missing_ok=True)
         if manifesto_temp is not None:
             manifesto_temp.unlink(missing_ok=True)
+
+
+def verificar_manifesto_sqlite(manifesto_path: Path) -> dict:
+    """Verifica o manifesto E os bytes antes de oferecer restauração."""
+    path = Path(manifesto_path).expanduser().resolve()
+    try:
+        manifest = json.loads(path.read_text(encoding="utf-8"))
+        nome = manifest["arquivo"]
+        expected = manifest["sha256"]
+        if manifest["formato"] != "DCA-SQLITE-BACKUP-1":
+            raise ErroBackupSQLite("Formato de manifesto desconhecido.")
+        if Path(nome).name != nome or not nome.endswith(".sqlite3"):
+            raise ErroBackupSQLite("Nome de snapshot inválido no manifesto.")
+        if len(expected) != 64 or any(c not in "0123456789abcdef" for c in expected.lower()):
+            raise ErroBackupSQLite("Hash inválido no manifesto.")
+        comprovacao = verificar_backup_sqlite(path.parent / nome, expected)
+        return {**manifest, "verificacao": comprovacao}
+    except (OSError, ValueError, KeyError, TypeError, json.JSONDecodeError) as exc:
+        if isinstance(exc, ErroBackupSQLite):
+            raise
+        raise ErroBackupSQLite(f"Manifesto do backup inválido: {exc}") from exc
+
+
+def preparar_restauracao_sqlite(manifesto: Path, destino: Path) -> dict:
+    """RECUPERA em arquivo separado; nunca troca DB ativo ou sobrescreve um arquivo.
+
+    O usuário pode inspecionar e comparar este arquivo; só uma manutenção
+    offline explícita pode adotá-lo como banco ativo.
+    """
+    verificado = verificar_manifesto_sqlite(manifesto)
+    origem = Path(verificado["verificacao"]["arquivo"])
+    destino = Path(destino).expanduser().resolve()
+    if destino.exists():
+        raise ErroBackupSQLite("Destino de recuperação já existe; nenhuma substituição permitida.")
+    destino.parent.mkdir(parents=True, exist_ok=True)
+    temporario = destino.with_name("." + destino.name + "-" + secrets.token_hex(4) + ".tmp")
+    try:
+        with origem.open("rb") as fonte, temporario.open("xb") as copia:
+            for bloco in iter(lambda: fonte.read(1024 * 1024), b""):
+                copia.write(bloco)
+            copia.flush()
+            os.fsync(copia.fileno())
+        verificar_backup_sqlite(temporario, verificado["sha256"])
+        os.link(temporario, destino)  # reserva destino sem sobrescrever arquivo existente
+        verificar_backup_sqlite(destino, verificado["sha256"])
+        return {"preparado": str(destino), "sha256": verificado["sha256"],
+                "ativado": False, "origem": str(origem)}
+    except Exception:
+        # Se verificação final falhar, não deixar arquivo anunciado como pronto.
+        destino.unlink(missing_ok=True)
+        raise
+    finally:
+        temporario.unlink(missing_ok=True)
