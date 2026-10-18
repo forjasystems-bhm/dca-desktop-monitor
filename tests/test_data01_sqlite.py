@@ -77,14 +77,25 @@ class Data01Tests(unittest.TestCase):
 
     def test_edicao_exclusao_e_inclusao_persistem_sem_alterar_csv(self):
         d = self.app()
-        row = dict(d.carregar_operacoes()[0])
-        row["Valor_USDT"] = "115.5"
-        self.assertTrue(d.atualizar_operacao(0, row))
-        self.assertEqual(d.carregar_operacoes()[0]["Valor_USDT"], 115.5)
+        # Migração importa o legado fielmente, mesmo se seus aportes faltarem.
+        # Um depósito retroativo concilia o livro sem tocar no CSV original.
+        self.assertTrue(d.salvar_operacao([
+            "2025-12-31 10:00:00", "USDT", "compra", 500, 5, 500, 5
+        ]))
+        nova = dict(d.carregar_operacoes()[0])
+        nova["Valor_USDT"] = "120"
+        nova["Preco"] = "1200"
+        self.assertTrue(d.atualizar_operacao(0, nova))
+        self.assertEqual(d.carregar_operacoes()[0]["Valor_USDT"], 120)
         self.assertTrue(d.excluir_operacao(1))
         self.assertFalse(d.excluir_operacao(99))
-        self.assertTrue(d.salvar_operacao(["2026-01-03 10:00:00", "ETH", "compra", 25, 250, 0.1, 5.3]))
-        self.assertEqual([x["Moeda"] for x in d.carregar_operacoes()], ["BTC", "ETH"])
+        self.assertTrue(d.salvar_operacao([
+            "2026-01-03 10:00:00", "ETH", "compra", 25, 250, 0.1, 5.3
+        ]))
+        self.assertEqual(
+            [op["Moeda"] for op in d.carregar_operacoes()],
+            ["BTC", "USDT", "ETH"]
+        )
         self.assertIn(VENDA.strip(), self.csv.read_text(encoding="utf-8"))
 
     def test_edicao_invalida_nao_modifica_historico(self):
@@ -134,7 +145,7 @@ class Data01Tests(unittest.TestCase):
         self.assertTrue(report["backup_valido"])
         self.assertEqual(report["csv_original"], "preservado")
         self.assertTrue(d.salvar_operacao([
-            "2026-01-03 10:00:00", "ETH", "compra", 25, 250, 0.1, 5.3
+            "2025-12-31 10:00:00", "USDT", "compra", 500, 5.3, 500, 5.3
         ]))
         self.assertEqual(d._store.diagnostico_integridade()["operacoes_atuais"], 3)
 
