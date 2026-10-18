@@ -210,10 +210,16 @@ class JanelaPrimeiroUso(ctk.CTkScrollableFrame):
             iniciais = self._db.carregar_posicoes_iniciais()
             externos = self._db.carregar_posicoes_externas()
             movimentos = self._db.carregar_movimentos_custodia()
+            from backend.custody_ledger import apurar_custodia
+            resumo=apurar_custodia(externos,movimentos)
+            descricoes=", ".join(
+                f"{r['Moeda']} {r['Quantidade']} ({r['Custodia']})"
+                for r in resumo["saldos"]
+            )
             self._movimentos_resumo.configure(text=(
                 f"{len(movimentos)} movimentações externas registradas. "
-                "Todas preservadas no SQLite; transferências e vendas "
-                "não se tornam compras do CSV."
+                f"Saldo atualizado por custódia: {descricoes or 'sem saldo'}. "
+                "Transferências e vendas NÃO são compras do CSV."
             ))
             self._estado.configure(text=(
                 f"SQLite: {diag['operacoes_atuais']} operações; "
@@ -223,7 +229,7 @@ class JanelaPrimeiroUso(ctk.CTkScrollableFrame):
                 f"integridade: {diag['status']}."
             ))
             self._posicoes.configure(text=(
-                "Saldos registrados: "
+                "Saldos declarados inicialmente: "
                 + ("  |  ".join(
                     f"{x['Moeda']} {x['Quantidade']} ({x['Custodia']}) "
                     + ("• custo não informado" if x['Custo_Total_USDT'] is None
