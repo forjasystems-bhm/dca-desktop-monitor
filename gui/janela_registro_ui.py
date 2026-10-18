@@ -167,7 +167,7 @@ class JanelaRegistroUI(ctk.CTkFrame):
         self._entry_preco.configure(state="disabled")
         self._entry_preco.bind("<KeyRelease>", self._on_calcular)
 
-        label(8, "VALOR (USDT)")
+        self._lbl_valor_titulo = label(8, "VALOR (USDT)")
         self._entry_valor = entry(8)
         self._entry_valor.configure(state="disabled")
         self._entry_valor.bind("<KeyRelease>", self._on_calcular)
@@ -271,6 +271,9 @@ class JanelaRegistroUI(ctk.CTkFrame):
     def set_label_preco_titulo(self, text: str) -> None:
         self._lbl_preco_titulo.configure(text=text)
 
+    def set_label_valor_titulo(self, text: str) -> None:
+        self._lbl_valor_titulo.configure(text=text)
+
     def set_label_saldo(self, text: str, style: str = "Saldo.TLabel") -> None:
         cor = NEON_GREEN if "Saldo" in style else TEXT_SECONDARY
         self._lbl_saldo.configure(text=text, text_color=cor)
@@ -320,6 +323,7 @@ class JanelaRegistroUI(ctk.CTkFrame):
         self._lbl_ajuda.configure(text="")
         self._lbl_erro_saldo.configure(text="")
         self._lbl_preco_titulo.configure(text="PRECO UNIT.")
+        self._lbl_valor_titulo.configure(text="VALOR (USDT)")
         self._btn_salvar.configure(state="disabled")
         self._lbl_status_btn.configure(
             text="preencha todos os campos", text_color=TEXT_MUTED)
