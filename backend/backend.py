@@ -324,10 +324,12 @@ class AnalysisEngine:
     def calcular_saldo_usdt(operacoes: List[Dict]) -> Dict:
         saldo_usdt = Decimal('0')
         historico_movimentacao = []
+        from backend.trading_fees import taxa_da_operacao
         for op in sorted(operacoes, key=lambda x: x['Data']):
             valor_usdt = Decimal(str(op['Valor_USDT']))
             moeda = op['Moeda']
             tipo = op['Operacao']
+            taxa = taxa_da_operacao(op)
             if moeda == 'USDT':
                 if tipo == 'compra':
                     saldo_usdt += valor_usdt
@@ -346,16 +348,18 @@ class AnalysisEngine:
                 continue
             else:
                 if tipo == 'compra':
-                    saldo_usdt -= valor_usdt
+                    saldo_usdt -= valor_usdt + taxa
                     historico_movimentacao.append({
                         'data': op['Data'], 'tipo': 'compra_crypto', 'moeda': moeda, 'valor': float(valor_usdt),
-                        'saldo_apos': float(saldo_usdt), 'descricao': f"Compra {moeda}: -${float(valor_usdt):,.2f} USDT"
+                        'saldo_apos': float(saldo_usdt), 'descricao': f"Compra {moeda}: -${float(valor_usdt + taxa):,.2f} USDT"
+                        + (f" (taxa {taxa} USDT)" if taxa else "")
                     })
                 elif tipo == 'venda':
-                    saldo_usdt += valor_usdt
+                    saldo_usdt += valor_usdt - taxa
                     historico_movimentacao.append({
                         'data': op['Data'], 'tipo': 'venda_crypto', 'moeda': moeda, 'valor': float(valor_usdt),
-                        'saldo_apos': float(saldo_usdt), 'descricao': f"Venda {moeda}: +${float(valor_usdt):,.2f} USDT"
+                        'saldo_apos': float(saldo_usdt), 'descricao': f"Venda {moeda}: +${float(valor_usdt - taxa):,.2f} USDT"
+                        + (f" (taxa {taxa} USDT)" if taxa else "")
                     })
         return {
             'saldo_atual': float(saldo_usdt),
@@ -429,13 +433,15 @@ class AnalysisEngine:
         total_vendido = Decimal('0')
         pmc = Decimal('0')
         operacoes_processadas = []
+        from backend.trading_fees import taxa_da_operacao
         for op in ops:
             valor = Decimal(str(op['Valor_USDT']))
+            taxa = taxa_da_operacao(op)
             preco = Decimal(str(op['Preco']))
             qtd = Decimal(str(op['Quantidade']))
             if op['Operacao'] == 'compra':
                 total_comprado += valor
-                custo_total += valor
+                custo_total += valor + taxa
                 quantidade_total += qtd
                 pmc = custo_total / quantidade_total if quantidade_total > 0 else Decimal('0')
                 operacoes_processadas.append({
@@ -450,7 +456,7 @@ class AnalysisEngine:
                     })
                     continue
                 custo_da_venda = qtd * pmc
-                lucro_venda = valor - custo_da_venda
+                lucro_venda = valor - taxa - custo_da_venda
                 total_vendido += valor
                 lucro_realizado += lucro_venda
                 custo_total -= custo_da_venda
