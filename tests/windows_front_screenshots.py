@@ -181,6 +181,29 @@ def main():
                 "atualizador, atalho, modo bandeja e instalador ainda não concluídos.\n"
             )
             (target / "README.md").write_text(report, encoding="utf-8")
+            # Primeira utilização: captura do diálogo REAL sobre o programa,
+            # usando uma base NOVA e vazia, sem importar a carteira de exemplo.
+            from gui.janela_primeiro_uso import JanelaPrimeiroUso
+            fresh = DataManager(
+                legacy_csv=Path(directory) / "sem-csv-anterior.csv",
+                data_dir=Path(directory) / "conta-nova",
+                auto_import_legacy=False,
+            )
+            janela_inicio = ctk.CTkToplevel(root)
+            janela_inicio.title("DCA Monitor · Primeiro acesso")
+            janela_inicio.geometry("1020x760+20+20")
+            assistente = JanelaPrimeiroUso(
+                janela_inicio, fresh, on_change=lambda: None,
+                on_begin_empty=lambda: janela_inicio.destroy(),
+            )
+            assistente.pack(fill="both", expand=True)
+            render(root)
+            render(janela_inicio)
+            assert fresh.carregar_operacoes_precisas() == []
+            assert assistente._btn_importar.cget("state") == "disabled"
+            capture(janela_inicio, "10_primeiro_uso_selecao.png", target)
+            janela_inicio.destroy()
+            render(root)
             print("FRONT_CAPTURE=PASS", flush=True)
         finally:
             app._countdown_ativo = False
