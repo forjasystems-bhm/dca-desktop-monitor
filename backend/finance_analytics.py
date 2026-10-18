@@ -47,6 +47,7 @@ def calcular_analise_por_periodo(
     fim: str | date | None = None,
     saldos_iniciais: list[dict] | None = None,
     saldos_externos: list[dict] | None = None,
+    movimentos_custodia: list[dict] | None = None,
 ) -> dict[str, Any]:
     """Usa custo médio móvel, histórico integral até o fim e movimentos do intervalo.
 
@@ -187,14 +188,13 @@ def calcular_analise_por_periodo(
                 s["realizado_periodo"] += realizado
                 s["operacoes_periodo"] += 1
 
-    # Outside-CSV balances take effect at their attested snapshot dates.
-    # They never enter the historical trade replay, and never become buys.
-    has_external = False
-    for lot in saldos_externos or []:
-        ref = date.fromisoformat(str(lot["Data"])[:10])
-        if data_fim is not None and ref > data_fim:
-            continue
-        has_external = True
+    # Independent custody journals never rewrite the imported trade ledger.
+    from backend.custody_ledger import apurar_custodia
+    base_ext = apurar_custodia(
+        saldos_externos or [], movimentos_custodia or [], ate=data_fim,
+    )
+    has_external = bool(saldos_externos)
+    for lot in base_ext["saldos"]:
         coin = str(lot["Moeda"]).upper()
         units = Decimal(str(lot["Quantidade"]))
         documented = lot.get("Custo_Total_USDT")
@@ -209,6 +209,13 @@ def calcular_analise_por_periodo(
                 bases_desconhecidas.add(coin)
             else:
                 assets["custo_aberto"] += Decimal(str(documented))
+    lucro_externo = base_ext["lucro_vendas_externas_usdt"]
+    if lucro_externo is not None:
+        # Network costs paid in units are accounted separately as expenses.
+        taxa_rede = base_ext["custo_taxas_transferencias_usdt"] or ZERO
+        externo_realizado = lucro_externo - taxa_rede
+    else:
+        externo_realizado = None
     totais = {campo: ZERO if campo != "operacoes_periodo" else 0 for campo in campos}
     for estado_moeda in ativos.values():
         for campo in campos:
@@ -226,7 +233,12 @@ def calcular_analise_por_periodo(
         "saldo_usdc": saldo_usdc,
         "saldo_usdt_inicial": saldo_usdt_inicial,
         "saldos_externos_declarados": has_external,
-        "base_de_custo_incompleta": bool(bases_desconhecidas or saldo_usdc > 0),
+        "movimentacoes_custodia": base_ext["movimentacoes"],
+        "lucro_custodia_usdt": externo_realizado,
+        "custodia_sem_custo": not base_ext["resultado_completo"],
+        "base_de_custo_incompleta": bool(
+            bases_desconhecidas or saldo_usdc > 0 or not base_ext["resultado_completo"]
+        ),
         "ativos_sem_custo": sorted(bases_desconhecidas),
         "taxas_registradas_usdt": taxas_conhecidas,
         "operacoes_sem_taxa_documentada": taxas_nao_informadas,
