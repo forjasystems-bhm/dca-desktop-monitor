@@ -315,7 +315,8 @@ class JanelaDistribuicao(ctk.CTkFrame):
     def _worker_atualizar(self):
         try:
             ops = self._data_manager.carregar_operacoes()
-            if not ops:
+            iniciais = self._data_manager.carregar_posicoes_iniciais()
+            if not ops and not iniciais:
                 self.after(0, self._ui_vazia)
                 return
             preco_mgr = self._price_manager
@@ -325,14 +326,19 @@ class JanelaDistribuicao(ctk.CTkFrame):
             taxa = (preco_mgr.taxa_brl_para_avaliacao()
                     if hasattr(preco_mgr, "taxa_brl_para_avaliacao")
                     else preco_mgr.preco_brl)
-            portfolio = self._engine.calcular_portfolio(ops, precos)
+            portfolio = self._engine.calcular_portfolio(
+                ops, precos, saldos_iniciais=iniciais,
+            )
             from backend.financial_audit import auditar_carteira_atual
             auditoria = auditar_carteira_atual(
                 self._data_manager.carregar_operacoes_precisas(), portfolio,
+                saldos_iniciais=iniciais,
             )
             # Histórico FX não comprova custo em BRL do depósito USDT.
             usdt_pl = None
-            dist = self._engine.calcular_distribuicao_portfolio(ops, precos)
+            dist = self._engine.calcular_distribuicao_portfolio(
+                ops, precos, saldos_iniciais=iniciais,
+            )
             self.after(0, lambda: self._atualizar_ui(
                 portfolio, usdt_pl, dist, taxa, auditoria,
             ))
@@ -375,7 +381,8 @@ class JanelaDistribuicao(ctk.CTkFrame):
         if auditoria is None:
             from backend.financial_audit import auditar_carteira_atual
             auditoria = auditar_carteira_atual(
-                self._data_manager.carregar_operacoes_precisas(), portfolio
+                self._data_manager.carregar_operacoes_precisas(), portfolio,
+                saldos_iniciais=self._data_manager.carregar_posicoes_iniciais(),
             )
         self._auditoria_fin06 = auditoria
         faltantes = resumo.get("cotacoes_pendentes", [])
@@ -460,7 +467,7 @@ class JanelaDistribuicao(ctk.CTkFrame):
         self._lbl_patrimonio.configure(text=self._fmt_val(tot_val))
         self._lbl_custo.configure(
             text=self._fmt_val_historico(tot_custo) + (
-                " (parcial: USDC s/ custo)" if resumo.get("base_de_custo_incompleta") else ""
+                " (parcial: posições sem custo)" if resumo.get("base_de_custo_incompleta") else ""
             )
         )
         # Compras históricas: sempre USDT, sem câmbio atual aplicado retroativamente.
