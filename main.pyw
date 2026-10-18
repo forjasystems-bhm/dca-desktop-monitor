@@ -3,6 +3,7 @@ import logging
 import os
 import platform
 import sys
+import subprocess
 from pathlib import Path
 
 # pyrefly: ignore [missing-import]
@@ -24,6 +25,9 @@ from gui.janela_caixa import JanelaCaixa
 from gui.janela_moedas import JanelaMoedas
 from gui.janela_analise_periodo import JanelaAnalisePeriodo
 from gui.janela_primeiro_uso import JanelaPrimeiroUso
+from gui.janela_aplicativo import JanelaAplicativo
+from backend.app_lifecycle import carregar_preferencias
+from backend.tray_windows import BandejaWindows, ErroBandeja
 
 from config.tema_cripto import (
     aplicar_tema,
@@ -61,6 +65,19 @@ class PortfolioDCA:
         self._refresh_lock = threading.Lock()
         self._initial_refresh_id = None
         self._primeiro_uso_janela = None
+        self._janela_aplicativo = None
+        self._tray_hidden = False
+        try:
+            self._preferences = carregar_preferencias(data_manager._store.diretorio)
+        except Exception as exc:
+            logger.warning("Preferências do Windows inválidas; modo bandeja DESLIGADO: %s", exc)
+            self._preferences = {"minimizar_para_bandeja": False}
+        self._tray = BandejaWindows(
+            ao_abrir=lambda: self._agendar_ui(self._restaurar_da_bandeja),
+            ao_atualizar=lambda: self._agendar_ui(self.atualizar_todas_as_analises),
+            ao_sair=lambda: self._agendar_ui(lambda: self._on_closing(force=True)),
+            icone=Path(__file__).resolve().parent/"img"/"favicon.png",
+        )
 
         self.janela = janela
         self.janela.title("Portfolio CRIPTO — Dashboard Interativo")
@@ -113,6 +130,52 @@ class PortfolioDCA:
         ).pack(fill="both", expand=True)
         janela.lift()
 
+    def _abrir_configuracoes(self):
+        if self._closing:
+            return
+        if (self._janela_aplicativo is not None
+                and self._janela_aplicativo.winfo_exists()):
+            self._janela_aplicativo.lift()
+            return
+        self._janela_aplicativo = JanelaAplicativo(
+            self.janela, self.data_manager,
+            ao_restaurar=self._restaurar_fora_app,
+            ao_alterar_preferencia=self._alterar_preferencias,
+        )
+        self._janela_aplicativo.lift()
+
+    def _alterar_preferencias(self, preferencias):
+        self._preferences = dict(preferencias)
+
+    def _restaurar_da_bandeja(self):
+        if self._closing:
+            return
+        self.janela.deiconify()
+        self.janela.lift()
+        self._tray_hidden = False
+        self._tray.parar()
+
+    def _restaurar_fora_app(self, manifesto):
+        if self._closing:
+            return
+        caminho=Path(self.data_manager.arquivo_db).resolve()
+        if getattr(sys, "frozen", False):
+            comando=[sys.executable,"--maintenance-restore",
+                     str(manifesto),str(caminho)]
+        else:
+            comando=[sys.executable,str(Path(__file__).resolve()),
+                     "--maintenance-restore",str(manifesto),str(caminho)]
+        try:
+            subprocess.Popen(
+                comando,cwd=str(Path(__file__).resolve().parent),
+                close_fds=True,
+            )
+        except Exception as exc:
+            from tkinter import messagebox
+            messagebox.showerror("Manutenção não iniciada",str(exc),parent=self.janela)
+            return
+        self._on_closing(force=True)
+
     def _aplicar_cursor_abas(self):
         try:
             _sb = self.tabview._segmented_button
@@ -161,6 +224,11 @@ class PortfolioDCA:
             font=ctk.CTkFont(_FONT, 9, "bold"),
             text_color=TEXT_SECONDARY,
         ).pack(side="right", padx=10)
+        ctk.CTkButton(
+            status_bar, text="Aplicativo / Configurações",
+            command=self._abrir_configuracoes, height=24, width=190,
+            fg_color=BG_CARD, text_color=BTC_ORANGE, hover_color=BG_SURFACE,
+        ).pack(side="left", padx=(4, 8))
         ctk.CTkButton(
             status_bar, text="Dados iniciais / Importar CSV",
             command=self._abrir_primeiro_uso, height=24, width=180,
@@ -438,10 +506,29 @@ class PortfolioDCA:
         else:
             self._agendar_ui(_update)
 
-    def _on_closing(self) -> None:
+    def _on_closing(self, *, force: bool = False) -> None:
         if self._closing:
             return
+        if not force and self._preferences.get("minimizar_para_bandeja", False):
+            try:
+                self._tray.iniciar()
+                self.janela.withdraw()
+                self._tray_hidden = True
+                return
+            except ErroBandeja as exc:
+                logger.warning("Bandeja indisponível, janela permanece aberta: %s", exc)
+                from tkinter import messagebox
+                messagebox.showwarning(
+                    "Bandeja indisponível",
+                    str(exc)+" Desative a opção ou utilize Sair completamente.",
+                    parent=self.janela,
+                )
+                return
         self._closing = True
+        self._tray.parar()
+        if (self._janela_aplicativo is not None
+                and self._janela_aplicativo.winfo_exists()):
+            self._janela_aplicativo.destroy()
         if (self._primeiro_uso_janela is not None
                 and self._primeiro_uso_janela.winfo_exists()):
             self._primeiro_uso_janela.destroy()
@@ -466,6 +553,12 @@ class PortfolioDCA:
 
 
 if __name__ == "__main__":
+    if len(sys.argv) == 4 and sys.argv[1] == "--maintenance-restore":
+        from backend.restore_command import executar_manutencao_restauracao
+        status = executar_manutencao_restauracao(
+            Path(sys.argv[2]), Path(sys.argv[3])
+        )
+        sys.exit(0 if status else 1)
     ctk.set_appearance_mode("dark")
     ctk.set_default_color_theme("dark-blue")
 
