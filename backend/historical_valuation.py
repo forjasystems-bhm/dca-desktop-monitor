@@ -135,6 +135,13 @@ def patrimonio_historico_na_data(
         else None
     )
 
+    # Aggregate includes actual custody disposals only when their opening cost
+    # is known. Keep the imported-CSV realized amount separately auditable.
+    lucro_csv = analise["totais"]["realizado_historico"]
+    lucro_externo = analise["lucro_custodia_usdt"]
+    lucro_realizado = (
+        lucro_csv + lucro_externo if lucro_externo is not None else None
+    )
     return {
         "data_utc": data_ref.isoformat(),
         "unidade": "USDT",
@@ -146,7 +153,8 @@ def patrimonio_historico_na_data(
         "completo": completo,
         "patrimonio_total": total,
         "lucro_nao_realizado": lucro_nr,
-        "lucro_realizado": analise["totais"]["realizado_historico"],
+        "lucro_realizado": lucro_realizado,
+        "lucro_realizado_csv": lucro_csv,
         "base_de_custo_incompleta": analise["base_de_custo_incompleta"],
         "saldos_externos_declarados": analise["saldos_externos_declarados"],
         "movimentacoes_custodia": analise["movimentacoes_custodia"],
@@ -154,7 +162,7 @@ def patrimonio_historico_na_data(
         "saldo_usdc": quantidade_usdc,
         "operacoes_sem_taxa_documentada": analise["operacoes_sem_taxa_documentada"],
         "resultado_total": (
-            analise["totais"]["realizado_historico"] + lucro_nr
-            if lucro_nr is not None else None
+            lucro_realizado + lucro_nr
+            if lucro_nr is not None and lucro_realizado is not None else None
         ),
     }
