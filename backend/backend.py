@@ -502,93 +502,11 @@ class AnalysisEngine:
 
 
     @staticmethod
-    def calcular_pl_usdt_brl(operacoes: List[Dict], preco_brl_atual: float) -> Dict | None:
-        if preco_brl_atual <= 0:
-            return None
+    def calcular_pl_usdt_brl(operacoes: List[Dict], preco_brl_atual: float) -> None:
+        """Resultado REAL em BRL indisponível sem origem e custo fiscal documentados.
 
-        custo_brl       = Decimal('0')
-        quantidade_usdt = Decimal('0')
-        lucro_realizado = Decimal('0')
-        pmc_brl         = Decimal('0')
-
-        for op in sorted(operacoes, key=lambda x: x['Data']):
-            tipo     = op['Operacao']
-            moeda    = op['Moeda']
-            valor    = Decimal(str(op['Valor_USDT']))
-            taxa_brl = Decimal(str(op.get('Taxa_BRL') or 0))
-
-            if moeda == 'USDT':
-                qtd = Decimal(str(op['Quantidade']))
-                
-                if tipo == 'compra':
-                    taxa_deposito = taxa_brl if taxa_brl > 0 else Decimal(str(preco_brl_atual))
-                    
-                    custo_brl       += qtd * taxa_deposito
-                    quantidade_usdt += qtd
-                    pmc_brl = custo_brl / quantidade_usdt if quantidade_usdt > 0 else Decimal('0')
-                    
-                elif tipo == 'venda' and quantidade_usdt > 0:
-                    qtd_saque = min(qtd, quantidade_usdt)
-                    
-                    custo_venda = qtd_saque * pmc_brl
-                    taxa_saque = taxa_brl if taxa_brl > 0 else pmc_brl
-                    
-                    lucro_realizado += (qtd_saque * taxa_saque) - custo_venda
-                    custo_brl       -= custo_venda
-                    quantidade_usdt -= qtd_saque
-
-            elif moeda == "USDC":
-                # USDC é transferência independente, não negociação USDT.
-                continue
-            else:
-                if tipo == 'compra' and quantidade_usdt > 0:
-                    qtd_gasta = min(valor, quantidade_usdt)
-                    custo_venda = qtd_gasta * pmc_brl
-                    
-                    custo_brl       -= custo_venda
-                    quantidade_usdt -= qtd_gasta
-
-                elif tipo == 'venda':
-                    if taxa_brl > 0:
-                        taxa_entrada = taxa_brl                    
-                    elif pmc_brl > 0:
-                        taxa_entrada = pmc_brl                    
-                    else:
-                        taxa_entrada = Decimal(str(preco_brl_atual)) 
-                    
-                    custo_brl       += valor * taxa_entrada
-                    quantidade_usdt += valor
-                    pmc_brl = custo_brl / quantidade_usdt if quantidade_usdt > 0 else Decimal('0')
-
-
-            if quantidade_usdt < Decimal('1e-8'):
-                quantidade_usdt = Decimal('0')
-                custo_brl       = Decimal('0')
-                pmc_brl         = Decimal('0')
-
-        # A contagem de quantidade_usdt acima pode divergir do saldo de caixa real
-        # (por causa dos clamps min(...) e do reset quando o saldo zera). O saldo de
-        # caixa é a fonte única da verdade; reconciliamos a posição com ele para que
-        # quantidade, custo, valor atual e P/L fechem com as demais telas em vez de
-        # misturar duas quantidades de USDT diferentes na mesma linha.
-        saldo_real = Decimal(str(AnalysisEngine.calcular_saldo_usdt(operacoes)['saldo_atual']))
-        if saldo_real <= Decimal('0'):
-            return None
-        if pmc_brl <= Decimal('0'):
-            pmc_brl = Decimal(str(preco_brl_atual))
-
-        qtd_final   = float(saldo_real)
-        custo_final = float(saldo_real * pmc_brl)
-        valor_atual = qtd_final * preco_brl_atual
-        pl_nao_real = valor_atual - custo_final
-
-        return {
-            'quantidade_usdt':         qtd_final,
-            'pmc_brl':                 float(pmc_brl),
-            'custo_posicao_brl':       custo_final,
-            'valor_atual_brl':         valor_atual,
-            'lucro_nao_realizado_brl': pl_nao_real,
-            'lucro_realizado_brl':     float(lucro_realizado),
-            'lucro_total_brl':         pl_nao_real + float(lucro_realizado),
-            'preco_brl_atual':         preco_brl_atual,
-        }
+        Transferências USDT não comprovam aquisição por reais. Aplicar câmbio
+        atual a operações passadas criaria um lucro histórico fictício.
+        A UI pode converter apenas o PATRIMÔNIO ATUAL para BRL à vista.
+        """
+        return None
