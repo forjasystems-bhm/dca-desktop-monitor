@@ -310,6 +310,25 @@ def main():
             assert scroll.yview()[0] > 0.0, scroll.yview()
             assert analise._arvore.winfo_exists()
             print("GUI_UI01_ANALYSIS_SCROLL_AND_CARDS=PASS")
+            app.tabview.set("✏️  Registrar Operação")
+            root.update_idletasks()
+            root.update()
+            form_scroller = app.aba_registro._scroll_registro._parent_canvas
+            assert app.aba_registro._btn_salvar.winfo_exists()
+            form_scroller.yview_moveto(1.0)
+            root.update()
+            assert form_scroller.yview()[0] > 0.0, form_scroller.yview()
+            print("GUI_UI01_OPERACAO_CONFIRMACAO_ACESSIVEL=PASS")
+
+            app.tabview.set("💰  Caixa (USD/BRL)")
+            root.update_idletasks()
+            root.update()
+            extrato = app.aba_caixa.tree
+            assert app.aba_caixa._extrato_scroll_horizontal.winfo_exists()
+            for coluna in ("Data", "Tipo", "Descrição", "Saldo Atualizado"):
+                assert extrato.column(coluna)["minwidth"] >= 150
+            print("GUI_UI01_CAIXA_COLUNAS_PRESERVADAS=PASS")
+
             print("GUI_INTEGRADA=PASS")
             print("MODULOS=SQLite+AnalysisEngine+AssetPeriodAnalytics+CustomTkinter")
             print("REGISTROS_MIGRADOS=" + str(dm._store.diagnostico_integridade()["operacoes_importadas"]))
