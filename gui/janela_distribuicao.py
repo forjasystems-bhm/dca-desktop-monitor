@@ -317,6 +317,7 @@ class JanelaDistribuicao(ctk.CTkFrame):
             ops = self._data_manager.carregar_operacoes()
             iniciais = self._data_manager.carregar_posicoes_iniciais()
             externos = self._data_manager.carregar_posicoes_externas()
+            movimentos = self._data_manager.carregar_movimentos_custodia()
             if not ops and not iniciais and not externos:
                 self.after(0, self._ui_vazia)
                 return
@@ -330,6 +331,7 @@ class JanelaDistribuicao(ctk.CTkFrame):
             portfolio = self._engine.calcular_portfolio(
                 ops, precos, saldos_iniciais=iniciais,
                 saldos_externos=externos,
+                movimentos_custodia=movimentos,
             )
             from backend.financial_audit import auditar_carteira_atual
             auditoria = auditar_carteira_atual(
@@ -341,6 +343,7 @@ class JanelaDistribuicao(ctk.CTkFrame):
             dist = self._engine.calcular_distribuicao_portfolio(
                 ops, precos, saldos_iniciais=iniciais,
                 saldos_externos=externos,
+                movimentos_custodia=movimentos,
             )
             self.after(0, lambda: self._atualizar_ui(
                 portfolio, usdt_pl, dist, taxa, auditoria,
@@ -387,6 +390,7 @@ class JanelaDistribuicao(ctk.CTkFrame):
                 self._data_manager.carregar_operacoes_precisas(), portfolio,
                 saldos_iniciais=self._data_manager.carregar_posicoes_iniciais(),
                 saldos_externos=self._data_manager.carregar_posicoes_externas(),
+                movimentos_custodia=self._data_manager.carregar_movimentos_custodia(),
             )
         self._auditoria_fin06 = auditoria
         faltantes = resumo.get("cotacoes_pendentes", [])
