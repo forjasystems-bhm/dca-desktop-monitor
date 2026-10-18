@@ -174,7 +174,6 @@ class JanelaPrimeiroUso(ctk.CTkScrollableFrame):
                        else f" • custo {x['Custo_Total_USDT']} USDT")
                     for x in externos
                 ) if externos else "")
-            )
             ))
         except Exception as exc:
             self._estado.configure(text=f"Erro de integridade: {exc}", text_color=NEON_RED)
