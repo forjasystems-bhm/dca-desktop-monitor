@@ -59,7 +59,16 @@ class JanelaAnalisePeriodo(ctk.CTkFrame):
         return NEON_GREEN if x >= 0 else NEON_RED
 
     def _construir(self):
-        titulo = ctk.CTkFrame(self, fg_color=BG_SURFACE, corner_radius=9)
+        # Em janelas pequenas, filtros e cartões não devem esconder a tabela.
+        # A página inteira pode rolar, sem alterar a navegação por abas.
+        self._conteudo_rolavel = ctk.CTkScrollableFrame(
+            self, fg_color="transparent",
+            scrollbar_button_color=BORDER,
+        )
+        self._conteudo_rolavel.pack(fill="both", expand=True)
+        titulo = ctk.CTkFrame(
+            self._conteudo_rolavel, fg_color=BG_SURFACE, corner_radius=9,
+        )
         titulo.pack(fill="x", padx=12, pady=(12, 6))
         ctk.CTkLabel(
             titulo, text="ANÁLISE FINANCEIRA POR ATIVO E PERÍODO",
@@ -74,7 +83,9 @@ class JanelaAnalisePeriodo(ctk.CTkFrame):
             font=ctk.CTkFont("Segoe UI", 12)
         ).pack(anchor="w", padx=18, pady=(0, 12))
 
-        filtros = ctk.CTkFrame(self, fg_color=BG_CARD, corner_radius=9)
+        filtros = ctk.CTkFrame(
+            self._conteudo_rolavel, fg_color=BG_CARD, corner_radius=9,
+        )
         filtros.pack(fill="x", padx=12, pady=6)
         for i in range(6):
             filtros.grid_columnconfigure(i, weight=1 if i in (0, 1) else 0)
@@ -100,7 +111,7 @@ class JanelaAnalisePeriodo(ctk.CTkFrame):
         self._on_periodo("Todo o histórico", recarregar=False)
         self._montar_avaliacao_historica()
 
-        cards = ctk.CTkFrame(self, fg_color="transparent")
+        cards = ctk.CTkFrame(self._conteudo_rolavel, fg_color="transparent")
         cards.pack(fill="x", padx=12, pady=6)
         metadados = [
             ("compras_periodo", "COMPRADO NO PERÍODO"),
@@ -130,16 +141,18 @@ class JanelaAnalisePeriodo(ctk.CTkFrame):
             self._indicadores[key] = valor
 
         frame_tabela = ctk.CTkFrame(
-            self, fg_color=BG_CARD, border_color=BORDER,
+            self._conteudo_rolavel, fg_color=BG_CARD, border_color=BORDER,
             border_width=1, corner_radius=9)
-        frame_tabela.pack(fill="both", expand=True, padx=12, pady=6)
+        frame_tabela.pack(fill="x", padx=12, pady=6)
         ctk.CTkLabel(
             frame_tabela, text="EXTRATO CONSOLIDADO POR ATIVO",
             text_color=TEXT_PRIMARY,
             font=ctk.CTkFont("Segoe UI", 14, "bold")
         ).pack(anchor="w", padx=14, pady=(12, 8))
         tabela_area = tk.Frame(frame_tabela, bg=BG_CARD)
-        tabela_area.pack(fill="both", expand=True, padx=12, pady=(0, 10))
+        tabela_area.configure(height=252)
+        tabela_area.pack(fill="x", padx=12, pady=(0, 10))
+        tabela_area.pack_propagate(False)
 
         estilo = ttk.Style()
         estilo.configure(
@@ -174,15 +187,25 @@ class JanelaAnalisePeriodo(ctk.CTkFrame):
         self._arvore.tag_configure("positivo", foreground=NEON_GREEN)
 
         self._status = ctk.CTkLabel(
-            self, text="", text_color=TEXT_SECONDARY,
-            anchor="w", font=ctk.CTkFont("Segoe UI", 11),
-            wraplength=1200
+            self._conteudo_rolavel, text="", text_color=TEXT_SECONDARY,
+            anchor="w", justify="left",
+            font=ctk.CTkFont("Segoe UI", 11),
+            wraplength=800
         )
         self._status.pack(fill="x", padx=22, pady=(2, 10))
+        self.bind("<Configure>", self._ajustar_largura_textos, add="+")
+
+    def _ajustar_largura_textos(self, event):
+        if event.widget is not self:
+            return
+        largura = max(340, int(event.width) - 102)
+        self._historico_valores.configure(wraplength=largura)
+        self._status.configure(wraplength=largura)
 
     def _montar_avaliacao_historica(self):
         """Área histórica independente dos valores de mercado atuais."""
-        frame = ctk.CTkFrame(self, fg_color=BG_CARD, border_color=BORDER,
+        frame = ctk.CTkFrame(
+            self._conteudo_rolavel, fg_color=BG_CARD, border_color=BORDER,
                              border_width=1, corner_radius=8)
         frame.pack(fill="x", padx=12, pady=(0, 6))
         ctk.CTkLabel(
@@ -218,12 +241,46 @@ class JanelaAnalisePeriodo(ctk.CTkFrame):
         self._historico_valores = ctk.CTkLabel(
             frame, text="Selecione uma data encerrada para consultar o SQLite.",
             font=ctk.CTkFont("Segoe UI", 12), text_color=TEXT_SECONDARY,
-            justify="left", anchor="w",
+            justify="left", anchor="w", wraplength=800,
         )
         self._historico_valores.grid(
-            row=2, column=0, columnspan=3, sticky="ew",
-            padx=14, pady=(3, 10)
+            row=2, column=0, columnspan=4, sticky="ew",
+            padx=14, pady=(3, 8)
         )
+        self._historico_cards = {}
+        grade = ctk.CTkFrame(frame, fg_color="transparent")
+        grade.grid(
+            row=3, column=0, columnspan=4, sticky="ew",
+            padx=10, pady=(0, 12),
+        )
+        metricas = (
+            ("patrimonio_total", "PATRIMÔNIO HISTÓRICO"),
+            ("caixa_usdt", "CAIXA USDT"),
+            ("saldo_usdc", "SALDO USDC"),
+            ("lucro_realizado", "P/L REALIZADO"),
+            ("lucro_nao_realizado", "P/L ABERTO"),
+            ("resultado_total", "P/L TOTAL"),
+        )
+        for i, (chave, titulo) in enumerate(metricas):
+            celula = ctk.CTkFrame(
+                grade, fg_color=BG_DEEP, border_color=BORDER,
+                border_width=1, corner_radius=6,
+            )
+            celula.grid(
+                row=i // 3, column=i % 3, sticky="nsew",
+                padx=4, pady=4,
+            )
+            grade.grid_columnconfigure(i % 3, weight=1, uniform="historico")
+            ctk.CTkLabel(
+                celula, text=titulo, font=ctk.CTkFont("Segoe UI", 11),
+                text_color=TEXT_SECONDARY,
+            ).pack(anchor="w", padx=12, pady=(10, 0))
+            valor = ctk.CTkLabel(
+                celula, text="—", font=ctk.CTkFont("Segoe UI", 16, "bold"),
+                text_color=CYAN,
+            )
+            valor.pack(anchor="w", padx=12, pady=(1, 11))
+            self._historico_cards[chave] = valor
         frame.grid_columnconfigure(2, weight=1)
 
     def _dia_selecionado(self):
@@ -238,6 +295,18 @@ class JanelaAnalisePeriodo(ctk.CTkFrame):
         validar_data_encerrada(dia)
         return dia
 
+    def _atualizar_cards_historicos(self, resultado):
+        for chave, lbl in self._historico_cards.items():
+            valor = resultado.get(chave)
+            if valor is None:
+                texto = "Indisponível" if chave == "patrimonio_total" else "Não apurado"
+                cor = NEON_RED if chave == "patrimonio_total" else TEXT_SECONDARY
+            else:
+                unidade = " USDC" if chave == "saldo_usdc" else " USDT"
+                texto = f"{self._valor(valor)}{unidade}"
+                cor = self._positivo(valor) if chave.startswith("lucro_") or chave == "resultado_total" else CYAN
+            lbl.configure(text=texto, text_color=cor)
+
     def _apurar_valor_historico(self):
         try:
             dia = self._dia_selecionado()
@@ -245,6 +314,7 @@ class JanelaAnalisePeriodo(ctk.CTkFrame):
                 self._dados._store, dia
             )
             self._ultimo_historico = resultado
+            self._atualizar_cards_historicos(resultado)
             self._btn_detalhar_historico.configure(state="normal")
             if resultado["completo"]:
                 valor = f"{self._valor(resultado['patrimonio_total'])} USDT"
@@ -278,6 +348,8 @@ class JanelaAnalisePeriodo(ctk.CTkFrame):
             return resultado
         except Exception as exc:
             self._ultimo_historico = None
+            for label in self._historico_cards.values():
+                label.configure(text="—", text_color=TEXT_SECONDARY)
             self._btn_detalhar_historico.configure(state="disabled")
             self._historico_valores.configure(
                 text=f"Não é possível apurar: {exc}", text_color=NEON_RED
