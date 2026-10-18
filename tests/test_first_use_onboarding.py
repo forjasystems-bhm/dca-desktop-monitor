@@ -202,9 +202,11 @@ class PrimeiroUsoTests(unittest.TestCase):
             moeda="BTC", quantidade="1.235", custodia="Corretora",
             data_posicao="2026-09-30",
         )
-        first = garantir_backup_diario(self.db.arquivo_db, hoje_utc="2026-10-18")
-        second = garantir_backup_diario(self.db.arquivo_db, hoje_utc="2026-10-18")
-        self.assertTrue(first["realizado"])
+        # Registrar saldo já cria imediatamente snapshot íntegro do SQLite.
+        # A abertura diária reutiliza essa cópia verificada sem duplicá-la.
+        first = garantir_backup_diario(self.db.arquivo_db)
+        second = garantir_backup_diario(self.db.arquivo_db)
+        self.assertFalse(first["realizado"])
         self.assertFalse(second["realizado"])
         manifest = verificar_manifesto_sqlite(Path(first["manifesto"]))
         self.assertEqual(manifest["sha256"], first["sha256"])
