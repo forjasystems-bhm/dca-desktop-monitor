@@ -310,6 +310,18 @@ def main():
             assert scroll.yview()[0] > 0.0, scroll.yview()
             assert analise._arvore.winfo_exists()
             print("GUI_UI01_ANALYSIS_SCROLL_AND_CARDS=PASS")
+            assert analise._arvore.column("compras_periodo")["minwidth"] >= 160
+            assert analise._arvore.column("realizado_historico")["minwidth"] >= 170
+            print("GUI_UI01_TITULOS_EXTRATO_LEGIVEIS=PASS")
+            dash.set_status(
+                "Retorno não apurado: histórico USDC sem custo de aquisição comprovado",
+                "#95a5b2",
+            )
+            assert dash._badge._lbl.cget("text") == "Verificar dados"
+            assert "USDC" in dash._status_detalhe.cget("text")
+            assert dash._status_detalhe.cget("wraplength") <= 950
+            print("GUI_UI01_AVISOS_FINANCEIROS_SEM_CORTE=PASS")
+
             app.tabview.set("✏️  Registrar Operação")
             root.update_idletasks()
             root.update()
