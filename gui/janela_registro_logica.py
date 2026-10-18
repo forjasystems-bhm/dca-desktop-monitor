@@ -55,6 +55,10 @@ class JanelaRegistro(JanelaRegistroUI):
         self.set_label_ajuda("")
         self.set_label_erro_saldo("")
         self.set_btn_salvar_state("disabled")
+        self.set_taxa_corretagem_state("disabled")
+        self.set_taxa_corretagem_state("normal")
+        self._entry_taxa_corretagem.delete(0, "end")
+        self.set_taxa_corretagem_state("disabled")
         self.set_label_preco_titulo("Preço Unitário:")
         self.set_label_valor_titulo("VALOR (USDT)")
 
@@ -85,6 +89,7 @@ class JanelaRegistro(JanelaRegistroUI):
             )
         else:
             self.set_combo_tipo_values(TipoOperacao.labels_crypto())
+            self.set_taxa_corretagem_state("normal")
             preco = self._price_manager.get_preco(moeda)
             self.set_entry_preco_state("normal")
             if preco:
@@ -281,6 +286,16 @@ class JanelaRegistro(JanelaRegistroUI):
                 erros.append("Preço deve ser maior que zero")
         except InvalidOperation:
             erros.append("Preço deve ser um número válido")
+        taxa_texto = self.get_taxa_corretagem_str()
+        if taxa_texto:
+            try:
+                taxa = Decimal(taxa_texto)
+                if not taxa.is_finite() or taxa < 0:
+                    erros.append("Taxa de corretagem USDT deve ser não negativa e finita.")
+            except InvalidOperation:
+                erros.append("Taxa de corretagem USDT inválida.")
+            if self._eh_stablecoin(self.get_moeda()):
+                erros.append("Taxa de corretagem somente para compra/venda de criptoativos.")
         return erros
 
     def _salvar(self) -> None:
@@ -316,6 +331,7 @@ class JanelaRegistro(JanelaRegistroUI):
             operacao = [
                 data_hora, moeda, tipo_csv,
                 str(valor), str(preco), str(quantidade), str(taxa_brl),
+                self.get_taxa_corretagem_str() or None,
             ]
 
             if not self._data_manager.salvar_operacao(operacao):
