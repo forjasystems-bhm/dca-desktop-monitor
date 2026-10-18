@@ -492,6 +492,15 @@ class ArmazemSQLite:
                 "WHERE moeda=? AND custodia=?", (ativo,local)
             ).fetchone()[0]:
                 raise ErroArmazenamento("Mesmo ativo e custódia já têm saldo inicial.")
+            if con.execute(
+                "SELECT COUNT(*) FROM movimentacoes_custodia "
+                "WHERE moeda=? AND (origem=? OR destino=?)",
+                (ativo,local,local),
+            ).fetchone()[0]:
+                raise ErroArmazenamento(
+                    "Custódia já possui movimentações documentadas. "
+                    "Não inserir novo saldo inicial que possa duplicar unidades."
+                )
             con.execute(
                 "INSERT INTO posicoes_externas "
                 "(data_posicao,moeda,quantidade,custodia,custo_total_usdt,"
@@ -604,6 +613,13 @@ class ArmazemSQLite:
                 raise ErroArmazenamento("Não existem saldos externos para movimentar.")
             # The opening snapshot is not a historical purchase: no backdating.
             datas=[str(p["Data"])[:10] for p in opens if p["Moeda"]==ativo]
+            if ativo=="USDT" and not datas:
+                # A sale can create verifiable USDT in its nominated
+                # destination, even when there was no initial USDT lot.
+                datas=[
+                    m["Data"][:10] for m in self._movimentos_transacionais(con)
+                    if m["Tipo"]=="venda" and m["Destino"]==origem
+                ]
             if not datas or dia.isoformat()<max(datas):
                 raise ErroArmazenamento(
                     "Movimentação anterior à posição externa declarada."
