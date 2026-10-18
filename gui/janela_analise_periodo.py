@@ -173,8 +173,10 @@ class JanelaAnalisePeriodo(ctk.CTkFrame):
             style="DCAAsset.Treeview")
         for key, title, width in COLUNAS:
             self._arvore.heading(key, text=title)
-            self._arvore.column(key, width=width,
-                                minwidth=90, stretch=True, anchor="e" if key != "ativo" else "w")
+            self._arvore.column(
+                key, width=width, minwidth=width, stretch=False,
+                anchor="e" if key != "ativo" else "w",
+            )
         y = ttk.Scrollbar(tabela_area, orient="vertical", command=self._arvore.yview)
         x = ttk.Scrollbar(tabela_area, orient="horizontal", command=self._arvore.xview)
         self._arvore.configure(yscrollcommand=y.set, xscrollcommand=x.set)
