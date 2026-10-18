@@ -55,6 +55,8 @@ def candle_binance_diario(
         volume = Decimal(str(candle[5]))
         if not volume.is_finite() or volume < 0:
             raise ErroCotacaoHistorica(f"Volume inválido de {par}.")
+    except ErroCotacaoHistorica:
+        raise
     except (ValueError, TypeError, InvalidOperation, OverflowError) as exc:
         raise ErroCotacaoHistorica(f"Resposta OHLCV inválida de {par}.") from exc
     return {
