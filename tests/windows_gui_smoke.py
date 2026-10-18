@@ -84,6 +84,19 @@ def main():
             assert historico["completo"]
             assert historico["patrimonio_total"] == Decimal("2180")
             assert "2,180.00" in ui._historico_valores.cget("text")
+            janela_detalhes = ui._detalhar_ativos_na_data()
+            root.update_idletasks()
+            root.update()
+            linhas = [
+                ui._detalhes_tabela.item(item)["values"]
+                for item in ui._detalhes_tabela.get_children()
+            ]
+            assert len(linhas) == 4
+            eth = next(row for row in linhas if row[0] == "ETH")
+            btc = next(row for row in linhas if row[0] == "BTC")
+            assert "500" in str(eth[4]), eth
+            assert "300" in str(btc[5]), btc
+            janela_detalhes.destroy()
             ui._data_cotacao.delete(0, "end")
             ui._data_cotacao.insert(0, "2026-09-29")
             historico_sem_dado = ui._apurar_valor_historico()
