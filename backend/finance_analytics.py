@@ -45,6 +45,7 @@ def calcular_analise_por_periodo(
     operacoes: list[dict[str, Any]],
     inicio: str | date | None = None,
     fim: str | date | None = None,
+    saldos_iniciais: list[dict] | None = None,
 ) -> dict[str, Any]:
     """Usa custo médio móvel, histórico integral até o fim e movimentos do intervalo.
 
@@ -77,11 +78,31 @@ def calcular_analise_por_periodo(
         }
 
     ativos = defaultdict(estado)
+    bases_desconhecidas = set()
+    saldo_usdt_inicial = ZERO
+    saldo_usdc_inicial = ZERO
+    for item in saldos_iniciais or []:
+        ref = date.fromisoformat(str(item["Data"])[:10])
+        if data_fim is not None and ref > data_fim:
+            continue
+        ativo = str(item["Moeda"]).upper()
+        quantidade = Decimal(str(item["Quantidade"]))
+        custo = item.get("Custo_Total_USDT")
+        if ativo == "USDT":
+            saldo_usdt_inicial += quantidade
+        elif ativo == "USDC":
+            saldo_usdc_inicial += quantidade
+        else:
+            ativos[ativo]["quantidade"] += quantidade
+            if custo is None or str(custo).strip() == "":
+                bases_desconhecidas.add(ativo)
+            else:
+                ativos[ativo]["custo_aberto"] += Decimal(str(custo))
     aportes = ZERO
     saques = ZERO
     entradas_usdc = ZERO
     saidas_usdc = ZERO
-    saldo_usdc = ZERO
+    saldo_usdc = saldo_usdc_inicial
     registros = []
     taxas_conhecidas = ZERO
     taxas_nao_informadas = 0
@@ -148,6 +169,10 @@ def calcular_analise_por_periodo(
                 raise ErroAnaliseFinanceira(
                     f"Registro {linha}: venda de {moeda} excede a posição disponível."
                 )
+            if moeda in bases_desconhecidas:
+                raise ErroAnaliseFinanceira(
+                    f"Registro {linha}: venda de {moeda} sem custo inicial conhecido."
+                )
             custo_venda = s["custo_aberto"] * quantidade / s["quantidade"]
             realizado = valor - taxa - custo_venda
             s["quantidade"] -= quantidade
@@ -176,6 +201,9 @@ def calcular_analise_por_periodo(
         "entradas_periodo_usdc": entradas_usdc,
         "saidas_periodo_usdc": saidas_usdc,
         "saldo_usdc": saldo_usdc,
+        "saldo_usdt_inicial": saldo_usdt_inicial,
+        "base_de_custo_incompleta": bool(bases_desconhecidas or saldo_usdc > 0),
+        "ativos_sem_custo": sorted(bases_desconhecidas),
         "taxas_registradas_usdt": taxas_conhecidas,
         "operacoes_sem_taxa_documentada": taxas_nao_informadas,
         "observacao_usdc": (
