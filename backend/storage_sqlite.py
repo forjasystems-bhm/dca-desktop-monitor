@@ -10,6 +10,7 @@ import sqlite3
 import sys
 import tempfile
 from datetime import datetime, timedelta, timezone
+from contextlib import closing
 from decimal import Decimal, InvalidOperation
 
 COLUNAS = ("Data", "Moeda", "Operacao", "Valor_USDT", "Preco", "Quantidade", "Taxa_BRL")
@@ -140,7 +141,7 @@ class ArmazemSQLite:
     def _inicializar(self):
         # Schema migrations require a verifiable snapshot BEFORE any ALTER.
         if self.arquivo_db.is_file() and self.arquivo_db.stat().st_size:
-            with sqlite3.connect(self.arquivo_db.as_uri() + "?mode=ro", uri=True) as verify:
+            with closing(sqlite3.connect(self.arquivo_db.as_uri() + "?mode=ro", uri=True)) as verify:
                 version = verify.execute("PRAGMA user_version").fetchone()[0]
             if version < 4:
                 from backend.backup_sqlite import criar_backup_sqlite
