@@ -221,6 +221,21 @@ def main():
             print("GUI_FIN04_FALHA_COTACAO_RECALCULA=PASS")
             print("GUI_FIN02_SEM_COTACAO=PASS")
             print("GUI_FIN02_RECUPERACAO=PASS")
+            # FIN-05: the real form has a single, optional fee field.
+            assert hasattr(app.aba_registro, "_entry_taxa_corretagem")
+            assert app.aba_registro.get_taxa_corretagem_str() == ""
+            assert hasattr(app.aba_edicao, "_campo_corretagem")
+            assert dm.salvar_operacao([
+                "2026-10-04 12:00:00", "BTC", "compra",
+                "100", "100", "1", "5.20", "1",
+            ])
+            d = app.analysis_engine.calcular_portfolio(
+                dm.carregar_operacoes(), {"BTC": 110, "ETH": 1500, "USDC": 0.965}
+            )
+            assert d["BTC"]["custo_posicao_final"] == 101, d["BTC"]
+            assert d["totais"]["caixa_usdt"] == 1579, d["totais"]
+            assert d["BTC"]["lucro_nao_realizado"] == 9
+            print("GUI_FIN05_CAMPO_E_CALCULO=PASS")
             print("GUI_INTEGRADA=PASS")
             print("MODULOS=SQLite+AnalysisEngine+AssetPeriodAnalytics+CustomTkinter")
             print("REGISTROS_MIGRADOS=" + str(dm._store.diagnostico_integridade()["operacoes_importadas"]))
