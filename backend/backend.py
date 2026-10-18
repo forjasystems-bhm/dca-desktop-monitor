@@ -257,17 +257,37 @@ class AnalysisEngine:
             return None
 
     @staticmethod
-    def calcular_portfolio(operacoes: List[Dict], precos_atuais: Dict[str, float]) -> Dict:
-        if not operacoes:
+    def calcular_portfolio(operacoes: List[Dict], precos_atuais: Dict[str, float],
+                          saldos_iniciais: List[Dict] | None = None) -> Dict:
+        saldos_iniciais = saldos_iniciais or []
+        if not operacoes and not saldos_iniciais:
             return {}
-        saldo_caixa = AnalysisEngine.calcular_saldo_usdt(operacoes)["saldo_atual"]
+        saldo_caixa = AnalysisEngine.calcular_saldo_usdt(
+            operacoes, saldos_iniciais=saldos_iniciais,
+        )["saldo_atual"]
         por_moeda = defaultdict(list)
+        abertura = defaultdict(lambda: {"quantidade": Decimal("0"), "custo": Decimal("0"),
+                                       "incompleto": False})
+        for initial in saldos_iniciais:
+            moeda = str(initial["Moeda"]).upper()
+            if moeda in ("USDT", "USDC"):
+                continue
+            v = abertura[moeda]
+            v["quantidade"] += Decimal(str(initial["Quantidade"]))
+            custo = initial.get("Custo_Total_USDT")
+            if custo is None or str(custo).strip() == "":
+                v["incompleto"] = True
+            else:
+                v["custo"] += Decimal(str(custo))
         for op in sorted(operacoes, key=lambda x: x["Data"]):
             if op["Moeda"] not in ("USDT", "USDC"):
                 por_moeda[op["Moeda"]].append(op)
         from backend.stablecoin_ledger import saldos_stablecoins
         stable = saldos_stablecoins(operacoes)
-        saldo_usdc = stable["saldos"]["USDC"]
+        saldo_usdc = stable["saldos"]["USDC"] + sum((
+            Decimal(str(x["Quantidade"])) for x in saldos_iniciais
+            if str(x["Moeda"]).upper() == "USDC"
+        ), Decimal("0"))
         resultado = {}
         totais = {
             "investido_liquido": 0.0,
@@ -280,21 +300,32 @@ class AnalysisEngine:
             "avaliacao_completa": True,
             "caixa_usdt": float(saldo_caixa),
             "caixa_usdc": float(saldo_usdc),
-            "base_de_custo_incompleta": saldo_usdc > 0,
+            "base_de_custo_incompleta": saldo_usdc > 0 or any(
+                v["incompleto"] for v in abertura.values()
+            ),
         }
-        for moeda, ops in por_moeda.items():
+        for moeda in sorted(set(por_moeda) | set(abertura)):
+            ops = por_moeda.get(moeda, [])
             preco = AnalysisEngine._preco_disponivel(precos_atuais.get(moeda))
-            analise = AnalysisEngine._analisar_moeda(ops, preco)
+            inicial = abertura.get(moeda, {})
+            analise = AnalysisEngine._analisar_moeda(
+                ops, preco, quantidade_inicial=inicial.get("quantidade", Decimal("0")),
+                custo_inicial=inicial.get("custo", Decimal("0")),
+                custo_desconhecido=inicial.get("incompleto", False),
+            )
             resultado[moeda] = analise
-            totais["investido_liquido"] += analise["custo_posicao_final"]
-            totais["realizado"] += analise["lucro_realizado"]
+            if analise["custo_posicao_final"] is not None:
+                totais["investido_liquido"] += analise["custo_posicao_final"]
+            if analise["lucro_realizado"] is not None:
+                totais["realizado"] += analise["lucro_realizado"]
             totais["compras_historicas_usdt"] += analise["total_comprado_usdt"]
             totais["vendas_historicas_usdt"] += analise["total_vendido_usdt"]
             if analise["valor_atual_posicao"] is None:
                 totais["cotacoes_pendentes"].append(moeda)
             else:
                 totais["valor_atual"] += analise["valor_atual_posicao"]
-                totais["nao_realizado"] += analise["lucro_nao_realizado"]
+                if analise["lucro_nao_realizado"] is not None:
+                    totais["nao_realizado"] += analise["lucro_nao_realizado"]
         if saldo_usdc > 0:
             preco_usdc = AnalysisEngine._preco_disponivel(precos_atuais.get("USDC"))
             valor_usdc = float(saldo_usdc * Decimal(str(preco_usdc))) if preco_usdc is not None else None
@@ -321,9 +352,8 @@ class AnalysisEngine:
             totais["avaliacao_completa"] = False
             totais["valor_atual"] = None
             totais["nao_realizado"] = None
-        elif saldo_usdc > 0:
-            # Patrimônio é apurável com USDC/USDT real. P/L agregado não:
-            # depósitos externos em USDC não comprovam custo de aquisição.
+        elif totais["base_de_custo_incompleta"]:
+            # Valor de mercado é conhecido; rentabilidade não é.
             totais["nao_realizado"] = None
         if saldo_caixa > 0.01:
             resultado["USDT (Caixa)"] = {
@@ -340,8 +370,12 @@ class AnalysisEngine:
         return resultado
 
     @staticmethod
-    def calcular_saldo_usdt(operacoes: List[Dict]) -> Dict:
-        saldo_usdt = Decimal('0')
+    def calcular_saldo_usdt(operacoes: List[Dict],
+                            saldos_iniciais: List[Dict] | None = None) -> Dict:
+        saldo_usdt = sum((
+            Decimal(str(x["Quantidade"])) for x in (saldos_iniciais or [])
+            if str(x["Moeda"]).upper() == "USDT"
+        ), Decimal("0"))
         historico_movimentacao = []
         from backend.trading_fees import taxa_da_operacao
         for op in sorted(operacoes, key=lambda x: x['Data']):
@@ -398,15 +432,18 @@ class AnalysisEngine:
 
     @staticmethod
     def calcular_distribuicao_portfolio(
-        operacoes: List[Dict], precos_atuais: Dict[str, float]
+        operacoes: List[Dict], precos_atuais: Dict[str, float],
+        saldos_iniciais: List[Dict] | None = None,
     ) -> Dict:
         """Uma participação percentual só existe se TODAS as posições estão cotadas."""
-        if not operacoes:
+        if not operacoes and not saldos_iniciais:
             return {
                 "distribuicao": {}, "total_valor_portfolio": 0.0,
                 "avaliacao_completa": True, "cotacoes_pendentes": [],
             }
-        carteira = AnalysisEngine.calcular_portfolio(operacoes, precos_atuais)
+        carteira = AnalysisEngine.calcular_portfolio(
+            operacoes, precos_atuais, saldos_iniciais=saldos_iniciais,
+        )
         totais = carteira["totais"]
         if not totais["avaliacao_completa"]:
             return {
@@ -444,13 +481,15 @@ class AnalysisEngine:
         }
 
     @staticmethod
-    def _analisar_moeda(ops: List[Dict], preco_atual: float) -> Dict:
-        custo_total = Decimal('0')
-        quantidade_total = Decimal('0')
+    def _analisar_moeda(ops: List[Dict], preco_atual: float,
+                        quantidade_inicial=Decimal("0"), custo_inicial=Decimal("0"),
+                        custo_desconhecido=False) -> Dict:
+        custo_total = Decimal(str(custo_inicial))
+        quantidade_total = Decimal(str(quantidade_inicial))
         lucro_realizado = Decimal('0')
         total_comprado = Decimal('0')
         total_vendido = Decimal('0')
-        pmc = Decimal('0')
+        pmc = (custo_total / quantidade_total if quantidade_total > 0 else Decimal("0"))
         operacoes_processadas = []
         from backend.trading_fees import taxa_da_operacao
         for op in ops:
@@ -499,19 +538,21 @@ class AnalysisEngine:
             lucro_nao_realizado = None
         else:
             valor_atual = qtd_final * preco_validado
-            lucro_nao_realizado = valor_atual - custo_final
-        realizado = float(lucro_realizado)
+            lucro_nao_realizado = None if custo_desconhecido else valor_atual - custo_final
+        realizado = float(lucro_realizado) if not custo_desconhecido else None
         return {
             "operacoes": operacoes_processadas,
             "quantidade_final": qtd_final,
-            "pmc_final": float(pmc),
-            "custo_posicao_final": custo_final,
+            "pmc_final": None if custo_desconhecido else float(pmc),
+            "custo_posicao_final": None if custo_desconhecido else custo_final,
+            "saldo_inicial_declarado": float(quantidade_inicial),
+            "base_de_custo_incompleta": bool(custo_desconhecido),
             "valor_atual_posicao": valor_atual,
             "lucro_realizado": realizado,
             "lucro_nao_realizado": lucro_nao_realizado,
             "lucro_total": (
                 realizado + lucro_nao_realizado
-                if lucro_nao_realizado is not None else None
+                if lucro_nao_realizado is not None and realizado is not None else None
             ),
             "preco_de_mercado": preco_validado if aberta else None,
             "cotacao_disponivel": not aberta or preco_validado is not None,
