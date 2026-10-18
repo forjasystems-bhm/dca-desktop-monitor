@@ -56,6 +56,7 @@ class JanelaRegistro(JanelaRegistroUI):
         self.set_label_erro_saldo("")
         self.set_btn_salvar_state("disabled")
         self.set_label_preco_titulo("Preço Unitário:")
+        self.set_label_valor_titulo("VALOR (USDT)")
 
         moeda = self.get_moeda()
         if not moeda:
@@ -63,16 +64,25 @@ class JanelaRegistro(JanelaRegistroUI):
 
         if self._eh_stablecoin(moeda):
             self.set_combo_tipo_values(TipoOperacao.labels_usdt())
-            preco_brl = self._price_manager.preco_brl
-            if preco_brl and preco_brl > 1.1:
-                taxa = f"{preco_brl:.4f}"
-                self.set_label_preco_atual(f"Cotação BRL: R${preco_brl:.4f}")
+            self.set_label_valor_titulo(f"UNIDADES ({moeda})")
+            self.set_label_preco_titulo(f"{moeda}/BRL (informado):")
+            if moeda == "USDT":
+                fx = (self._price_manager.taxa_brl_para_avaliacao()
+                      if hasattr(self._price_manager, "taxa_brl_para_avaliacao")
+                      else self._price_manager.preco_brl)
+                self.set_entry_preco(f"{fx:.4f}" if fx else "")
+                self.set_label_preco_atual(
+                    f"USDT/BRL R${fx:.4f}" if fx else "Informe câmbio USDT/BRL real"
+                )
             else:
-                taxa = "1.000000"
-                self.set_label_preco_atual("Cotação BRL indisponível")
-            self.set_label_preco_titulo("Taxa BRL:")
-            self.set_label_ajuda(f"💡 {moeda} equivale a $1,00 USD. Informe a cotação do dólar em reais.")
-            self.set_entry_preco(taxa)
+                # Nunca preencher USDC/BRL a partir da paridade teórica
+                # USDT/USD. Sem cotação documentada, operador informa a sua.
+                self.set_entry_preco("")
+                self.set_label_preco_atual("USDC/BRL manual")
+            self.set_label_ajuda(
+                f"Entrada/saída de {moeda} na própria unidade. "
+                "Não converte automaticamente USDC em USDT."
+            )
         else:
             self.set_combo_tipo_values(TipoOperacao.labels_crypto())
             preco = self._price_manager.get_preco(moeda)
@@ -190,7 +200,7 @@ class JanelaRegistro(JanelaRegistroUI):
             if valor > 0 and preco > 0:
                 if self._eh_stablecoin(moeda):
                     qtd = valor
-                    texto = f"= {float(qtd):.2f} {moeda}  (taxa R${float(preco):.4f}/USD)"
+                    texto = f"= {float(qtd):.2f} {moeda}  (cotação informada R${float(preco):.4f}/{moeda})"
                 else:
                     qtd = valor / preco
                     texto = f"≈ {float(qtd):.8f} unidades"
@@ -205,6 +215,24 @@ class JanelaRegistro(JanelaRegistroUI):
             self.set_btn_salvar_state("disabled")
 
     def _verificar_saldo_inline(self, tipo: TipoOperacao, moeda: str, valor: Decimal) -> None:
+        if tipo is TipoOperacao.VENDA and moeda == "USDC":
+            try:
+                from backend.stablecoin_ledger import saldos_stablecoins
+                registro = self._data_manager.carregar_operacoes_precisas()
+                saldo = saldos_stablecoins(registro)["saldos"]["USDC"]
+                if valor > saldo:
+                    self.set_label_erro_saldo(
+                        f"⚠ Saque maior que o saldo: {saldo} USDC disponíveis."
+                    )
+                    self.set_btn_salvar_state("disabled")
+                    return
+            except Exception as exc:
+                self.set_label_erro_saldo(f"⚠ Não foi possível verificar USDC: {exc}")
+                self.set_btn_salvar_state("disabled")
+                return
+            self.set_label_erro_saldo("")
+            self._verificar_estado_botao()
+            return
         if tipo is not TipoOperacao.VENDA or self._eh_stablecoin(moeda):
             self.set_label_erro_saldo("")
             self._verificar_estado_botao()
@@ -267,7 +295,14 @@ class JanelaRegistro(JanelaRegistroUI):
             tipo_csv = tipo.csv_value
             valor = Decimal(self.get_valor_str())
             preco = Decimal(self.get_preco_str())
-            taxa_brl = self._price_manager.preco_brl or 0.0
+            taxa_brl = (
+                preco if self._eh_stablecoin(moeda)
+                else (
+                    self._price_manager.taxa_brl_para_avaliacao()
+                    if hasattr(self._price_manager, "taxa_brl_para_avaliacao")
+                    else self._price_manager.preco_brl
+                ) or Decimal("0")
+            )
 
             if self._eh_stablecoin(moeda):
                 quantidade = valor
@@ -294,7 +329,7 @@ class JanelaRegistro(JanelaRegistroUI):
             if tipo is TipoOperacao.VENDA_TOTAL:
                 msg = f"Venda Total executada! Saldo de {moeda} zerado com sucesso."
             elif self._eh_stablecoin(moeda):
-                msg = f"{'Depósito' if tipo_csv == 'compra' else 'Saque'} de ${valor:,.2f} {moeda} registrado!"
+                msg = f"{'Depósito' if tipo_csv == 'compra' else 'Saque'} de {quantidade:,.2f} {moeda} registrado!"
             else:
                 msg = f"{tipo_csv.title()} de {moeda} registrada com sucesso!"
 
