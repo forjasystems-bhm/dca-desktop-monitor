@@ -189,20 +189,30 @@ class ArmazemSQLite:
         dados = origem.read_bytes()
         sha = hashlib.sha256(dados).hexdigest()
         rows = _ler_csv_bytes(dados)
-        backup = _backup(dados, self.diretorio / "backups", sha)
         con = self._conectar()
         try:
             con.execute("BEGIN IMMEDIATE")
             anterior = con.execute(
-                "SELECT sha256, caminho_origem FROM importacoes_legadas LIMIT 1"
+                "SELECT sha256, caminho_origem, caminho_backup "
+                "FROM importacoes_legadas LIMIT 1"
             ).fetchone()
             if anterior is not None:
-                if anterior == (sha, str(origem)):
+                if anterior[:2] == (sha, str(origem)):
+                    # After successful migration, a missing/corrupt backup is
+                    # evidence to report, not permission to silently recreate it.
+                    backup_original = Path(anterior[2])
+                    if (not backup_original.is_file()
+                        or hashlib.sha256(backup_original.read_bytes()).hexdigest() != sha):
+                        raise ErroMigracao(
+                            "Backup original ausente ou alterado. "
+                            "Verifique e restaure a cópia; não recriar automaticamente."
+                        )
                     con.execute("COMMIT")
                     return 0
                 raise ErroMigracao("Já existe importação diferente; não misturar dados.")
             if con.execute("SELECT COUNT(*) FROM operacoes").fetchone()[0]:
                 raise ErroMigracao("Banco contém operações; importação automática proibida.")
+            backup = _backup(dados, self.diretorio / "backups", sha)
             for row in rows:
                 self._inserir(con, row)
             con.execute(
