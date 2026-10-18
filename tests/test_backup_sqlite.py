@@ -1,5 +1,6 @@
 """Testes do backup SQLite, incluindo transações confirmadas em WAL."""
 import hashlib
+from contextlib import closing
 import json
 from pathlib import Path
 import sqlite3
@@ -18,10 +19,11 @@ class BackupSqliteTests(unittest.TestCase):
         self.base = Path(temp.name)
         self.banco = self.base / "portfolio.sqlite3"
         self.destino = self.base / "backups"
-        with sqlite3.connect(self.banco) as con:
+        with closing(sqlite3.connect(self.banco)) as con:
             con.execute("PRAGMA journal_mode=WAL")
             con.execute("CREATE TABLE operacoes(id INTEGER PRIMARY KEY, valor TEXT)")
             con.execute("INSERT INTO operacoes(valor) VALUES ('100.123456789')")
+            con.commit()
 
     def test_snapshot_preserva_transacoes_e_gera_manifesto_verificavel(self):
         origem_antes = self.banco.read_bytes()
@@ -31,7 +33,7 @@ class BackupSqliteTests(unittest.TestCase):
         self.assertEqual(dados["motivo"], "antes_atualizacao")
         self.assertEqual(dados["sha256"], hashlib.sha256(copia.read_bytes()).hexdigest())
         self.assertEqual(verificar_backup_sqlite(copia, dados["sha256"])["integridade_sqlite"], "ok")
-        with sqlite3.connect(copia) as con:
+        with closing(sqlite3.connect(copia)) as con:
             self.assertEqual(con.execute("SELECT valor FROM operacoes").fetchone()[0], "100.123456789")
         self.assertEqual(self.banco.read_bytes(), origem_antes)
 
@@ -42,7 +44,7 @@ class BackupSqliteTests(unittest.TestCase):
             con.commit()
             self.assertTrue(Path(str(self.banco) + "-wal").exists())
             copia = Path(criar_backup_sqlite(self.banco, self.destino)["backup"])
-            with sqlite3.connect(copia) as backup_con:
+            with closing(sqlite3.connect(copia)) as backup_con:
                 self.assertEqual(backup_con.execute("SELECT COUNT(*) FROM operacoes").fetchone()[0], 2)
 
     def test_repeticao_nao_substitui_backups_anteriores(self):
