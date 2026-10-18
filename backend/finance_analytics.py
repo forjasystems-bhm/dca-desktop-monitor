@@ -193,7 +193,7 @@ def calcular_analise_por_periodo(
     base_ext = apurar_custodia(
         saldos_externos or [], movimentos_custodia or [], ate=data_fim,
     )
-    has_external = bool(saldos_externos)
+    has_external = bool(base_ext["saldos"] or base_ext["movimentacoes"])
     for lot in base_ext["saldos"]:
         coin = str(lot["Moeda"]).upper()
         units = Decimal(str(lot["Quantidade"]))
