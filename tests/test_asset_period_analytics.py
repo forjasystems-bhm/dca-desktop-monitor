@@ -10,7 +10,8 @@ from backend.finance_analytics import (
 def op(d, moeda, tipo, qtd, valor):
     return {
         "Data": d, "Moeda": moeda, "Operacao": tipo,
-        "Quantidade": qtd, "Valor_USDT": valor, "Preco": valor / qtd,
+        "Quantidade": qtd, "Valor_USDT": valor,
+        "Preco": Decimal(str(valor)) / Decimal(str(qtd)),
         "Taxa_BRL": 0,
     }
 
