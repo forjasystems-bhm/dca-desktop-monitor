@@ -128,6 +128,16 @@ class JanelaCaixa(ctk.CTkFrame):
             anchor="w",
         )
         self.lbl_saldo.pack(anchor="w", pady=(4, 0))
+        self.lbl_saldo_usdc = ctk.CTkLabel(
+            left, text="USDC: carregando...", font=_F_CARD_VAL,
+            text_color=CYAN, anchor="w",
+        )
+        self.lbl_saldo_usdc.pack(anchor="w", pady=(5, 0))
+        self.lbl_fluxo_usdc = ctk.CTkLabel(
+            left, text="USDC independente: sem conversão 1:1",
+            font=_F_STATUS, text_color=TEXT_SECONDARY, anchor="w"
+        )
+        self.lbl_fluxo_usdc.pack(anchor="w", pady=(2, 0))
 
     def _build_hero_right(self, parent):
         right = ctk.CTkFrame(parent, fg_color=BG_SURFACE, corner_radius=0)
@@ -301,10 +311,13 @@ class JanelaCaixa(ctk.CTkFrame):
 
     def _fmt_val(self, val):
         if self.display_currency == "BRL":
-            taxa = self._price_manager.preco_brl
-            if taxa and taxa > 0:
-                return f"R$ {val * taxa:,.2f}"
-        return f"$ {val:,.2f}"
+            taxa = (self._price_manager.taxa_brl_para_avaliacao()
+                    if hasattr(self._price_manager, "taxa_brl_para_avaliacao")
+                    else self._price_manager.preco_brl)
+            if not taxa or taxa <= 0:
+                return "BRL indisponível"
+            return f"R$ {val * taxa:,.2f}"
+        return f"{val:,.2f} USDT"
 
     def atualizar(self):
         self.lbl_status.configure(text="⟳  calculando...", text_color=CYAN)
@@ -316,12 +329,26 @@ class JanelaCaixa(ctk.CTkFrame):
         try:
             ops  = self._data_manager.carregar_operacoes()
             info = self._engine.calcular_saldo_usdt(ops)
-            self.after(0, lambda: self._atualizar_ui(info))
+            from backend.stablecoin_ledger import saldos_stablecoins
+            stable = saldos_stablecoins(ops)
+            self.after(0, lambda: self._atualizar_ui(info, stable))
         except Exception as e:
             self.after(0, lambda: self.lbl_status.configure(text="✕ erro", text_color=NEON_RED))
             self.after(0, lambda: messagebox.showerror("Erro", f"Erro ao carregar saldo:\n{e}"))
 
-    def _atualizar_ui(self, info):
+    def _atualizar_ui(self, info, stable=None):
+        if stable is not None:
+            usdc = stable["saldos"]["USDC"]
+            entrou = stable["entradas"]["USDC"]
+            saiu = stable["saidas"]["USDC"]
+            self.lbl_saldo_usdc.configure(
+                text=f"USDC: {usdc:,.2f} unidades — saldo independente",
+                text_color=NEON_GREEN if usdc >= 0 else NEON_RED,
+            )
+            self.lbl_fluxo_usdc.configure(
+                text=f"USDC recebido: {entrou:,.2f}  |  enviado: {saiu:,.2f}  "
+                     "· Não convertido em USDT",
+            )
         s_atual = info["saldo_atual"]
         hist    = info["historico"]
         agora   = datetime.now().strftime("%d/%m  %H:%M:%S")
