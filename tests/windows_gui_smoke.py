@@ -364,6 +364,36 @@ def main():
             assert splash._erro is None
             print("GUI_OPS01_STARTUP_OFFLINE=PASS")
 
+            # PRE-01: actual first-use dialogue supports verified external
+            # custody and does not create a purchase operation.
+            from gui.janela_primeiro_uso import JanelaPrimeiroUso
+            new_db = DataManager(
+                legacy_csv=Path(pasta)/"sem-historico.csv",
+                data_dir=Path(pasta)/"novo-usuario",
+                auto_import_legacy=False,
+            )
+            first_win = ctk.CTkToplevel(root)
+            first_win.geometry("1020x760+35+35")
+            first_ui = JanelaPrimeiroUso(
+                first_win, new_db, lambda: None, lambda: None
+            )
+            first_ui.pack(fill="both", expand=True)
+            root.update()
+            assert first_ui._externo_flag.get() is False
+            first_ui._externo_flag.set(True)
+            assert first_ui._externo_flag.get()
+            new_db.registrar_posicao_externa(
+                moeda="BTC", quantidade="0.025",custodia="Cold wallet",
+                data_posicao="2026-09-30",confirmacao_independente=True,
+            )
+            first_ui.atualizar()
+            root.update()
+            assert "EXTERNOS AO CSV" in first_ui._posicoes.cget("text")
+            assert "Cold wallet" in first_ui._posicoes.cget("text")
+            assert new_db.carregar_operacoes_precisas() == []
+            first_win.destroy()
+            print("GUI_PRE01_CUSTODIA_EXTERNA_SEM_COMPRA=PASS")
+
             # OPS-01: repeated refresh requests must not start parallel
             # workers or commit background results after window destruction.
             # A atualização inicial pode já estar ativa neste ponto,
