@@ -13,6 +13,8 @@ from datetime import datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
 
 COLUNAS = ("Data", "Moeda", "Operacao", "Valor_USDT", "Preco", "Quantidade", "Taxa_BRL")
+CAMPO_FEE = "Taxa_Corretagem_USDT"
+COLUNAS_EXPORTACAO = COLUNAS + (CAMPO_FEE,)
 
 
 class ErroArmazenamento(RuntimeError):
@@ -62,6 +64,8 @@ def _validar(item: dict, indice: int) -> dict[str, str]:
         if not numero.is_finite() or (numero < 0 if key == "Taxa_BRL" else numero <= 0):
             raise ErroMigracao(f"Linha {indice}: {key} inválido.")
         d[key] = val
+    fee = item.get(CAMPO_FEE)
+    d[CAMPO_FEE] = None if fee is None or str(fee).strip() == "" else str(fee).strip()
     return d
 
 
@@ -77,7 +81,7 @@ def _ler_csv_bytes(conteudo: bytes) -> list[dict[str, str]]:
             raise ErroMigracao("CSV sem cabeçalho.")
         if len(headers) != len(set(headers)):
             raise ErroMigracao("CSV tem cabeçalhos repetidos.")
-        if set(headers) - set(COLUNAS):
+        if set(headers) - set(COLUNAS_EXPORTACAO):
             raise ErroMigracao("CSV tem colunas desconhecidas.")
         if set(COLUNAS[:6]) - set(headers):
             raise ErroMigracao("CSV tem colunas obrigatórias ausentes.")
@@ -148,7 +152,10 @@ class ArmazemSQLite:
                 capturado_em_utc TEXT NOT NULL,
                 PRIMARY KEY (data_utc, ativo, moeda_cotacao)
             )""")
-            conn.execute("PRAGMA user_version=2")
+            cols = {r[1] for r in conn.execute("PRAGMA table_info(operacoes)")}
+            if "taxa_corretagem_usdt" not in cols:
+                conn.execute("ALTER TABLE operacoes ADD COLUMN taxa_corretagem_usdt TEXT")
+            conn.execute("PRAGMA user_version=3")
         finally:
             conn.close()
 
@@ -171,9 +178,9 @@ class ArmazemSQLite:
     @staticmethod
     def _inserir(con, row: dict[str, str]):
         con.execute(
-            "INSERT INTO operacoes (data, moeda, operacao, valor_usdt, preco, quantidade, taxa_brl) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?)",
-            tuple(row[campo] for campo in COLUNAS))
+            "INSERT INTO operacoes (data, moeda, operacao, valor_usdt, preco, "
+            "quantidade, taxa_brl, taxa_corretagem_usdt) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            tuple(row[campo] for campo in COLUNAS) + (row.get(CAMPO_FEE),))
 
     def importar_csv(self, origem: Path) -> int:
         origem = Path(origem).expanduser().resolve()
@@ -218,26 +225,27 @@ class ArmazemSQLite:
         con = self._conectar()
         try:
             rows = con.execute(
-                "SELECT data, moeda, operacao, valor_usdt, preco, quantidade, taxa_brl "
-                "FROM operacoes ORDER BY id"
+                "SELECT data, moeda, operacao, valor_usdt, preco, quantidade, "
+                "taxa_brl, taxa_corretagem_usdt FROM operacoes ORDER BY id"
             ).fetchall()
         finally:
             con.close()
-        return [dict(zip(COLUNAS, row)) for row in rows]
+        return [dict(zip(COLUNAS_EXPORTACAO, row)) for row in rows]
 
     def listar(self) -> list[dict]:
         self._conferir_origem()
         con = self._conectar()
         try:
             rows = con.execute(
-                "SELECT data, moeda, operacao, valor_usdt, preco, quantidade, taxa_brl "
-                "FROM operacoes ORDER BY id").fetchall()
+                "SELECT data, moeda, operacao, valor_usdt, preco, quantidade, "
+                "taxa_brl, taxa_corretagem_usdt FROM operacoes ORDER BY id").fetchall()
         finally:
             con.close()
         return [{
             "Data": row[0], "Moeda": row[1], "Operacao": row[2],
             "Valor_USDT": float(row[3]), "Preco": row[4],
-            "Quantidade": float(row[5]), "Taxa_BRL": float(row[6])
+            "Quantidade": float(row[5]), "Taxa_BRL": float(row[6]),
+            CAMPO_FEE: row[7],
         } for row in rows]
 
     @staticmethod
@@ -251,10 +259,10 @@ class ArmazemSQLite:
     def _livro_transacional(con) -> list[dict]:
         """Estado completo lido sob o lock de gravação da MESMA transação."""
         linhas = con.execute(
-            "SELECT data, moeda, operacao, valor_usdt, preco, quantidade, taxa_brl "
-            "FROM operacoes ORDER BY id"
+            "SELECT data, moeda, operacao, valor_usdt, preco, quantidade, "
+            "taxa_brl, taxa_corretagem_usdt FROM operacoes ORDER BY id"
         ).fetchall()
-        return [dict(zip(COLUNAS, linha)) for linha in linhas]
+        return [dict(zip(COLUNAS_EXPORTACAO, linha)) for linha in linhas]
 
     def diagnostico_livro_legado(self) -> dict:
         """Relatório apenas consultivo: importação CSV NÃO reescreve nem rejeita legado."""
@@ -267,9 +275,9 @@ class ArmazemSQLite:
         return {"consistente": True, "erro": None, "registros": len(historico)}
 
     def inserir(self, valores: list) -> bool:
-        if len(valores) != len(COLUNAS):
+        if len(valores) not in (len(COLUNAS), len(COLUNAS_EXPORTACAO)):
             raise ErroArmazenamento("Quantidade incorreta de campos.")
-        row = _validar(dict(zip(COLUNAS, valores)), 0)
+        row = _validar(dict(zip(COLUNAS_EXPORTACAO, valores)), 0)
         self._conferir_origem()
         from backend.operation_integrity import validar_livro
         con = self._conectar()
@@ -309,8 +317,8 @@ class ArmazemSQLite:
             validar_livro(livro)
             con.execute(
                 "UPDATE operacoes SET data=?, moeda=?, operacao=?, valor_usdt=?, "
-                "preco=?, quantidade=?, taxa_brl=? WHERE id=?",
-                tuple(row[campo] for campo in COLUNAS) + (id_operacao,))
+                "preco=?, quantidade=?, taxa_brl=?, taxa_corretagem_usdt=? WHERE id=?",
+                tuple(row[campo] for campo in COLUNAS) + (row.get(CAMPO_FEE), id_operacao,))
             con.execute("COMMIT")
             return True
         except Exception:
@@ -511,9 +519,9 @@ class ArmazemSQLite:
         destino = Path(destino).expanduser().resolve()
         if self.arquivo_legado and destino == self.arquivo_legado:
             raise ErroArmazenamento("Proibido sobrescrever o CSV legado.")
-        rows = self.listar()
+        rows = self.listar_preciso()
         destino.parent.mkdir(parents=True, exist_ok=True)
         with destino.open("x", encoding="utf-8", newline="") as f:
-            writer = csv.DictWriter(f, fieldnames=COLUNAS)
+            writer = csv.DictWriter(f, fieldnames=COLUNAS_EXPORTACAO)
             writer.writeheader()
             writer.writerows(rows)
