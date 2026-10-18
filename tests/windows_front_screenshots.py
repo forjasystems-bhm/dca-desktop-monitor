@@ -145,6 +145,9 @@ def main():
             stable = saldos_stablecoins(dm.carregar_operacoes_precisas())
             app.aba_caixa._atualizar_ui(hist_usdt, stable)
             capture(root, "04_caixa_usdt_usdc.png", target)
+            app.aba_caixa.tree.xview_moveto(1.0)
+            capture(root, "08_caixa_colunas_finais.png", target)
+            app.aba_caixa.tree.xview_moveto(0.0)
 
             app.tabview.set("✏️  Registrar Operação")
             app.aba_registro.set_combo_moeda_value("BTC")
@@ -156,6 +159,8 @@ def main():
             app.aba_registro._calcular_quantidade()
             assert app.aba_registro.get_taxa_corretagem_str() == "1.00"
             capture(root, "05_registrar_operacao_taxa.png", target)
+            app.aba_registro._scroll_registro._parent_canvas.yview_moveto(1.0)
+            capture(root, "09_registro_confirmacao.png", target)
 
             report = (
                 "# Capturas reais da interface — UI-01\n\n"
@@ -169,7 +174,9 @@ def main():
                 "4. Caixa: entradas e saldos USDT/USDC separados.\n"
                 "5. Registrar operação: campo opcional de corretagem em USDT.\n"
                 "6. Dashboard rolado horizontalmente: colunas finais preservadas.\n"
-                "7. Análise rolada verticalmente: extrato financeiro acessível.\n\n"
+                "7. Análise rolada verticalmente: extrato financeiro acessível.\n"
+                "8. Caixa: navegação até a última coluna do extrato.\n"
+                "9. Registro: rolagem até o botão de confirmação.\n\n"
                 "**Em desenvolvimento:** revisão final de contraste e acabamento, "
                 "atualizador, atalho, modo bandeja e instalador ainda não concluídos.\n"
             )
