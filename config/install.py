@@ -49,7 +49,8 @@ def preparar_atalho_windows(
     if not getattr(sys, "frozen", False):
         if not src.is_file():
             raise FileNotFoundError(f"Script Python não encontrado: {src}")
-        code.append(f"$lnk.Arguments = {ps('"' + str(src) + '"')}")
+        arguments = '"' + str(src) + '"'
+        code.append(f"$lnk.Arguments = {ps(arguments)}")
     code.append("$lnk.Save()")
     return "\n".join(code)
 
