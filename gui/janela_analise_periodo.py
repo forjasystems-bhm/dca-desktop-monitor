@@ -200,7 +200,9 @@ class JanelaAnalisePeriodo(ctk.CTkFrame):
         try:
             inicio, fim = self._datas()
             self._analise = calcular_analise_por_periodo(
-                self._dados.carregar_operacoes(), inicio, fim
+                (self._dados.carregar_operacoes_precisas()
+                 if hasattr(self._dados, "carregar_operacoes_precisas")
+                 else self._dados.carregar_operacoes()), inicio, fim
             )
             itens = ["Todos os ativos", *self._analise["ativos"].keys()]
             self._ativos.configure(values=itens)

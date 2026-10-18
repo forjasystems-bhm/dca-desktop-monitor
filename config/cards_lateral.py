@@ -40,7 +40,7 @@ _ITEMS_DEF = [
     ("pl_r",       "💰 P/L Realizado",     "lucro já sacado/vendido",   NEON_GREEN),
     ("pl",         "🏁 P/L Total",         "realizado + não realizado", NEON_GREEN),
     ("pct",        "📊 Ganho %",           "P/L NR ÷ custo total",      NEON_GREEN),
-    ("retorno",    "📉 Retorno Total %",   "P/L total ÷ compras históricas", NEON_GREEN),
+    ("retorno",    "📉 Resultado / Compras %",   "P/L total ÷ volume comprado (não é ROI)", NEON_GREEN),
     ("div",        "🎯 Diversificação",    "ativos distintos",          TEXT_SECONDARY),
     ("melhor",     "🏆 Melhor Ativo",      "maior P/L total",           NEON_GREEN),
     ("pior",       "💀 Pior Ativo",        "menor P/L total",           NEON_RED),

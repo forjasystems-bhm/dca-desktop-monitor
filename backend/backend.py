@@ -20,88 +20,62 @@ except ImportError:
     print("Para instalar, execute: pip install ccxt")
 
 class DataManager:
-    def __init__(self, arquivo_csv: str = "meu_diario_operacoes.csv"):
+    """Interface de compatibilidade para as telas; persistência nova em SQLite."""
+
+    def __init__(self, arquivo_csv: str = "meu_diario_operacoes.csv",
+                 *, data_dir=None, legacy_csv=None):
+        from backend.storage_sqlite import ArmazemSQLite, diretorio_dados_padrao
+
         raiz_projeto = Path(__file__).resolve().parent.parent
-        self.arquivo_csv = raiz_projeto / "db" / arquivo_csv
-        self.headers = ['Data', 'Moeda', 'Operacao', 'Valor_USDT', 'Preco', 'Quantidade', 'Taxa_BRL']
+        self.arquivo_csv = (
+            Path(legacy_csv) if legacy_csv is not None
+            else raiz_projeto / "db" / arquivo_csv
+        )
+        self.headers = ['Data', 'Moeda', 'Operacao', 'Valor_USDT', 'Preco',
+                        'Quantidade', 'Taxa_BRL']
+        self._store = ArmazemSQLite(
+            Path(data_dir) if data_dir is not None else diretorio_dados_padrao(),
+            self.arquivo_csv,
+        )
+        self.arquivo_db = self._store.arquivo_db
 
     def criar_arquivo_se_necessario(self):
-        if not self.arquivo_csv.exists():
-            try:
-                self.arquivo_csv.parent.mkdir(parents=True, exist_ok=True)
-
-                with self.arquivo_csv.open('w', newline='', encoding='utf-8') as f:
-                    csv.writer(f).writerow(self.headers)
-
-            except Exception as e:
-                raise RuntimeError(f"Erro ao criar arquivo CSV: {e}")
+        # Compatibilidade: banco já inicializado no construtor.
+        return None
 
     def carregar_operacoes(self) -> List[Dict]:
-        operacoes_validas = []
-        try:
-            with open(self.arquivo_csv, mode='r', encoding='utf-8') as arquivo_csv:
-                reader = csv.DictReader(arquivo_csv)
-                for numero_linha, linha in enumerate(reader, start=2):
-                    try:
-                        campos_obrigatorios = ['Data', 'Moeda', 'Operacao', 'Quantidade', 'Valor_USDT']
-                        for campo in campos_obrigatorios:
-                            if campo not in linha or not linha[campo]:
-                                raise ValueError(f"Campo obrigatório '{campo}' ausente ou vazio.")
-                        linha['Quantidade'] = float(linha['Quantidade'])
-                        linha['Valor_USDT'] = float(linha['Valor_USDT'])
-                        linha['Taxa_BRL']   = float(linha.get('Taxa_BRL') or 0) 
-                        if linha['Operacao'].lower() not in ['compra', 'venda']:
-                            raise ValueError(f"Operação inválida: {linha['Operacao']}")
-                        operacoes_validas.append(linha)
-                    except Exception as e:
-                        logger.warning(f"Linha {numero_linha} inválida e ignorada no arquivo '{self.arquivo_csv}'. Erro: {e}. Conteúdo: {linha}")
-                        continue
-        except FileNotFoundError:
-            return []
-        except Exception as e:
-            logger.error(f"Ocorreu um erro inesperado ao ler o arquivo '{self.arquivo_csv}': {e}")
-            return []
-        return operacoes_validas
+        # Falhas de integridade não podem ser mascaradas como carteira vazia.
+        return self._store.listar()
+
+    def carregar_operacoes_precisas(self) -> List[Dict]:
+        """API de cálculo histórico exato; não converte números a float."""
+        return self._store.listar_preciso()
+
+    def importar_csv_legado(self, caminho: str) -> int:
+        return self._store.importar_csv(Path(caminho))
+
+    def exportar_csv(self, destino: str) -> None:
+        self._store.exportar_csv(Path(destino))
 
     def excluir_operacao(self, indice: int) -> bool:
         try:
-            operacoes = self.carregar_operacoes()
-            if indice < 0 or indice >= len(operacoes):
-                return False
-            del operacoes[indice]
-            with open(self.arquivo_csv, 'w', newline='', encoding='utf-8') as f:
-                writer = csv.DictWriter(f, fieldnames=self.headers)
-                writer.writeheader()
-                writer.writerows(operacoes)
-            return True
-        except Exception as e:
-            logger.error(f"Erro ao excluir operação: {e}")
+            return self._store.excluir(indice)
+        except Exception:
+            logger.exception("Falha ao excluir operação; banco preservado")
             return False
 
     def atualizar_operacao(self, indice: int, nova_operacao: Dict) -> bool:
         try:
-            operacoes = self.carregar_operacoes()
-            if indice < 0 or indice >= len(operacoes):
-                return False
-            operacoes[indice] = nova_operacao
-            with open(self.arquivo_csv, 'w', newline='', encoding='utf-8') as f:
-                writer = csv.DictWriter(f, fieldnames=self.headers)
-                writer.writeheader()
-                writer.writerows(operacoes)
-            return True
-        except Exception as e:
-            logger.error(f"Erro ao atualizar operação: {e}")
+            return self._store.substituir(indice, nova_operacao)
+        except Exception:
+            logger.exception("Falha ao atualizar operação; banco preservado")
             return False
 
     def salvar_operacao(self, operacao: List) -> bool:
         try:
-            self.criar_arquivo_se_necessario()
-            with open(self.arquivo_csv, 'a', newline='', encoding='utf-8') as f:
-                csv.writer(f).writerow(operacao)
-            logger.info("Operação salva com sucesso")
-            return True
-        except Exception as e:
-            logger.error(f"Erro ao salvar operação: {e}")
+            return self._store.inserir(operacao)
+        except Exception:
+            logger.exception("Falha ao salvar operação; banco preservado")
             return False
 
 class PriceManager:

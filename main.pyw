@@ -2,6 +2,8 @@ import threading
 import logging
 import os
 import platform
+import sys
+from pathlib import Path
 
 # pyrefly: ignore [missing-import]
 import customtkinter as ctk
@@ -59,6 +61,10 @@ class PortfolioDCA:
         self.janela.title("Portfolio CRIPTO — Dashboard Interativo")
         self.janela.protocol("WM_DELETE_WINDOW", self._on_closing)
 
+        self._preview_data01 = (
+            getattr(sys, "frozen", False)
+            and (Path(sys.executable).resolve().parent / "DCA-PREVIEW-MODE").is_file()
+        )
         self._criar_interface()
         self._preencher_dados_iniciais()
         self._iniciar_atualizacoes_automaticas()
@@ -111,6 +117,9 @@ class PortfolioDCA:
             font=ctk.CTkFont(_FONT, 9, "bold"),
             text_color=TEXT_SECONDARY,
         ).pack(side="right", padx=10)
+
+        if self._preview_data01:
+            self._montar_validacao_data01()
 
         self.tabview = ctk.CTkTabview(
             self.janela,
@@ -180,6 +189,60 @@ class PortfolioDCA:
             self.janela.state("zoomed")
         except Exception:
             self.janela.attributes("-zoomed", True)
+
+    def _montar_validacao_data01(self):
+        faixa = ctk.CTkFrame(
+            self.janela, fg_color=BG_CARD, border_color=BTC_ORANGE,
+            border_width=1, corner_radius=7,
+        )
+        faixa.pack(side="top", fill="x", padx=15, pady=(8, 0))
+        try:
+            estado = self.data_manager._store.diagnostico_integridade()
+            texto = (
+                f"DEMONSTRAÇÃO DATA-01  •  SQLite {estado['status']}  •  "
+                f"{estado['operacoes_importadas']} registros importados  •  "
+                f"{estado['operacoes_atuais']} no banco  •  "
+                f"Backup {'verificado' if estado['backup_valido'] else 'NÃO VERIFICADO'}"
+            )
+        except Exception as exc:
+            texto = f"DEMONSTRAÇÃO DATA-01  •  Falha na verificação: {exc}"
+        ctk.CTkLabel(
+            faixa, text=texto, font=ctk.CTkFont("Segoe UI", 13, "bold"),
+            text_color="#f4f4f4", anchor="w",
+        ).pack(side="left", fill="x", expand=True, padx=14, pady=8)
+        ctk.CTkButton(
+            faixa, text="Verificar banco e backup", width=190,
+            fg_color=BTC_ORANGE, text_color="#101010",
+            command=self._verificar_data01,
+        ).pack(side="right", padx=10, pady=6)
+
+    def _verificar_data01(self):
+        from tkinter import messagebox
+        try:
+            estado = self.data_manager._store.diagnostico_integridade()
+            if estado["status"] != "OK":
+                titulo = "DATA-01 — VERIFICAÇÃO COM FALHA"
+                aviso = messagebox.showerror
+            else:
+                titulo = "DATA-01 — BANCO E BACKUP VERIFICADOS"
+                aviso = messagebox.showinfo
+            aviso(titulo, (
+                "AMBIENTE DE DEMONSTRAÇÃO (DADOS FICTÍCIOS)\n\n"
+                f"SQLite: {estado['integridade_sqlite']}\n"
+                f"Registros importados do CSV: {estado['operacoes_importadas']}\n"
+                f"Registros atuais no banco: {estado['operacoes_atuais']}\n"
+                f"Backup do CSV íntegro: {'SIM' if estado['backup_valido'] else 'NÃO'}\n"
+                f"Arquivo original: {estado['csv_original']}\n"
+                f"Hash de origem: {estado.get('hash_legado', 'N/A')}\n\n"
+                f"Banco local: {estado['banco']}\n\n"
+                "O arquivo CSV original não foi substituído.\n"
+                "A interface financeira ainda é a do software original."
+            ))
+        except Exception as exc:
+            messagebox.showerror(
+                "DATA-01 — NÃO FOI POSSÍVEL VERIFICAR",
+                f"A integridade não pôde ser demonstrada:\n{exc}",
+            )
 
     def _preencher_dados_iniciais(self):
         self.aba_caixa.atualizar()
