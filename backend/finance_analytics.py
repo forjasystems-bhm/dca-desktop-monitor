@@ -79,6 +79,9 @@ def calcular_analise_por_periodo(
     ativos = defaultdict(estado)
     aportes = ZERO
     saques = ZERO
+    entradas_usdc = ZERO
+    saidas_usdc = ZERO
+    saldo_usdc = ZERO
     registros = []
     for linha, op in enumerate(operacoes, start=2):
         try:
@@ -106,6 +109,21 @@ def calcular_analise_por_periodo(
                     aportes += valor
                 else:
                     saques += valor
+            continue
+
+        if moeda == "USDC":
+            # USDC transferido não prova compra nem custo em USDT.
+            # Campo Valor_USDT legado é nominal e nunca paridade de mercado.
+            if abs(quantidade - valor) > Decimal("0.00000001"):
+                raise ErroAnaliseFinanceira(
+                    f"Registro {linha}: quantidade e nominal USDC divergentes."
+                )
+            saldo_usdc += quantidade if tipo == "compra" else -quantidade
+            if dentro:
+                if tipo == "compra":
+                    entradas_usdc += quantidade
+                else:
+                    saidas_usdc += quantidade
             continue
 
         s = ativos[moeda]
@@ -146,5 +164,12 @@ def calcular_analise_por_periodo(
         "totais": totais,
         "aportes_periodo_usdt": aportes,
         "saques_periodo_usdt": saques,
+        "entradas_periodo_usdc": entradas_usdc,
+        "saidas_periodo_usdc": saidas_usdc,
+        "saldo_usdc": saldo_usdc,
+        "observacao_usdc": (
+            "USDC movimentado independentemente; depósitos e saques não são "
+            "compras e vendas realizadas em USDT."
+        ),
         "unidade": "USDT",
     }
