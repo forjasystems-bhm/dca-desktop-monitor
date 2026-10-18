@@ -5,7 +5,7 @@ from typing import Dict, List
 from collections import defaultdict
 import logging
 from decimal import Decimal, InvalidOperation
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -79,117 +79,192 @@ class DataManager:
             return False
 
 class PriceManager:
-    def __init__(self, exchange_name: str = 'binance'):
+    """Cache de cotações com validade e estado explícitos.
+
+    Falhas de rede não tornam o último preço válido para avaliação de mercado.
+    A leitura histórica é independente deste cache.
+    """
+    VALIDADE_SEGUNDOS = 180
+
+    def __init__(self, exchange_name: str = "binance"):
         self.exchange = None
         self.precos_cache = {}
+        self.cotacoes_atualizadas_em = {}
+        self.falhas_cotacao = set()
         self.ultima_atualizacao = None
         self.preco_brl = 0.0
+        self._brl_atualizado_em = None
+        self._brl_falhou = True
         self.setup_exchange(exchange_name)
 
     def setup_exchange(self, exchange_name: str):
         if not CCXT_AVAILABLE:
             return
         try:
-            if exchange_name.lower() == 'binance':
+            if exchange_name.lower() == "binance":
                 self.exchange = ccxt.binance({
-                    'rateLimit': 1200,
-                    'enableRateLimit': True,
-                    'timeout': 10000
+                    "rateLimit": 1200,
+                    "enableRateLimit": True,
+                    "timeout": 10000,
                 })
-            logger.info(f"Exchange {exchange_name} configurada com sucesso")
-        except Exception as e:
-            logger.error(f"Erro ao configurar exchange {exchange_name}: {e}")
+            logger.info("Exchange %s configurada", exchange_name)
+        except Exception:
+            logger.exception("Falha ao configurar exchange %s", exchange_name)
+
+    @staticmethod
+    def _preco_positivo(valor):
+        try:
+            decimal = Decimal(str(valor))
+            return float(decimal) if decimal.is_finite() and decimal > 0 else None
+        except (ValueError, InvalidOperation, TypeError, OverflowError):
+            return None
+
+    @staticmethod
+    def _dentro_do_prazo(instante, agora, max_age):
+        if instante is None or instante.tzinfo is None:
+            return False
+        idade = (agora - instante).total_seconds()
+        return 0 <= idade <= max_age
 
     def atualizar_precos(self, moedas: List[str]) -> bool:
         if not self.exchange:
+            self.falhas_cotacao.update(m.upper() for m in moedas if m.upper() != "USDT")
+            self._brl_falhou = True
             return False
-        todos_sucesso = True
+
+        sucesso = True
         for moeda in moedas:
-            if moeda == 'USDT':
-                self.precos_cache['USDT'] = 1.0
+            moeda = moeda.upper()
+            if moeda == "USDT":
+                self.precos_cache["USDT"] = 1.0
                 continue
             try:
-                ticker = self.exchange.fetch_ticker(f'{moeda}/USDT')
-                last_price = ticker.get('last')
-                if last_price is not None:
-                    self.precos_cache[moeda] = float(last_price)
-                else:
-                    logger.warning(f"Preço 'last' ausente no ticker de {moeda}, mantendo o preço antigo em cache se existir.")
-                    todos_sucesso = False
-            except Exception as e:
-                logger.warning(f"Falha na comunicação ao buscar preço de {moeda}: {e}")
-                todos_sucesso = False
+                ticker = self.exchange.fetch_ticker(f"{moeda}/USDT")
+                preco = self._preco_positivo(ticker.get("last"))
+                if preco is None:
+                    raise ValueError("ticker sem cotação positiva/finita")
+                self.precos_cache[moeda] = preco
+                self.cotacoes_atualizadas_em[moeda] = datetime.now(timezone.utc)
+                self.falhas_cotacao.discard(moeda)
+            except Exception as exc:
+                self.falhas_cotacao.add(moeda)
+                sucesso = False
+                logger.warning("Cotação %s indisponível (cache não validado): %s", moeda, exc)
+
         try:
-            ticker_brl = self.exchange.fetch_ticker('USDT/BRL')
-            last_price_brl = ticker_brl.get('last')
-            if last_price_brl is not None:
-                self.preco_brl = float(last_price_brl)
-                logger.info(f"Preço USDT/BRL atualizado: R$ {self.preco_brl:.2f}")
-            else:
-                logger.warning("Preço 'last' ausente no ticker de USDT/BRL.")
-                todos_sucesso = False
-        except Exception as e:
-            logger.warning(f"Falha na comunicação ao buscar preço de USDT/BRL: {e}")
-            todos_sucesso = False
-        if todos_sucesso:
-            self.ultima_atualizacao = datetime.now()
-            logger.info("Todos os preços foram atualizados com sucesso.")
-        return todos_sucesso
+            ticker_brl = self.exchange.fetch_ticker("USDT/BRL")
+            preco_brl = self._preco_positivo(ticker_brl.get("last"))
+            if preco_brl is None:
+                raise ValueError("ticker USDT/BRL sem cotação positiva/finita")
+            self.preco_brl = preco_brl
+            self._brl_atualizado_em = datetime.now(timezone.utc)
+            self._brl_falhou = False
+        except Exception as exc:
+            self._brl_falhou = True
+            sucesso = False
+            logger.warning("USDT/BRL indisponível (cache não validado): %s", exc)
+
+        if sucesso:
+            self.ultima_atualizacao = datetime.now(timezone.utc)
+        return sucesso
+
+    def precos_para_avaliacao(self, *, agora=None, max_age=None):
+        """Entrega apenas cotações atuais comprovadas, jamais cache stale."""
+        agora = agora or datetime.now(timezone.utc)
+        prazo = self.VALIDADE_SEGUNDOS if max_age is None else max_age
+        validos = {"USDT": 1.0}
+        for moeda, valor in self.precos_cache.items():
+            if moeda == "USDT" or moeda in self.falhas_cotacao:
+                continue
+            if (self._preco_positivo(valor) is not None
+                and self._dentro_do_prazo(
+                    self.cotacoes_atualizadas_em.get(moeda), agora, prazo
+                )):
+                validos[moeda] = float(valor)
+        return validos
+
+    def taxa_brl_para_avaliacao(self, *, agora=None, max_age=None):
+        if self._brl_falhou:
+            return None
+        agora = agora or datetime.now(timezone.utc)
+        prazo = self.VALIDADE_SEGUNDOS if max_age is None else max_age
+        if not self._dentro_do_prazo(self._brl_atualizado_em, agora, prazo):
+            return None
+        return self._preco_positivo(self.preco_brl)
 
     def get_preco(self, moeda: str) -> float | None:
-        return self.precos_cache.get(moeda)
+        return self.precos_para_avaliacao().get(moeda.upper())
 
     def validar_moeda(self, simbolo: str) -> bool:
-
-        if not CCXT_AVAILABLE or not hasattr(self, 'exchange') or not self.exchange:
-            return True 
-            
+        if not CCXT_AVAILABLE or not self.exchange:
+            return True
         try:
-            par = f"{simbolo.upper()}/USDT"
-            self.exchange.fetch_ticker(par)
+            self.exchange.fetch_ticker(f"{simbolo.upper()}/USDT")
             return True
         except Exception:
             return False
 
 class AnalysisEngine:
     @staticmethod
+    def _preco_disponivel(valor):
+        """Rejeita ausente, zero, preço negativo e não finito."""
+        try:
+            dec = Decimal(str(valor))
+            return float(dec) if dec.is_finite() and dec > 0 else None
+        except (ValueError, InvalidOperation, TypeError, OverflowError):
+            return None
+
+    @staticmethod
     def calcular_portfolio(operacoes: List[Dict], precos_atuais: Dict[str, float]) -> Dict:
         if not operacoes:
             return {}
-        saldo_info_usdt = AnalysisEngine.calcular_saldo_usdt(operacoes)
-        saldo_caixa_usdt = saldo_info_usdt['saldo_atual']
-        ops_por_moeda = defaultdict(list)
-        for op in sorted(operacoes, key=lambda x: x['Data']):
-            if op['Moeda'] == 'USDT':
-                continue
-            ops_por_moeda[op['Moeda']].append(op)
+        saldo_caixa = AnalysisEngine.calcular_saldo_usdt(operacoes)["saldo_atual"]
+        por_moeda = defaultdict(list)
+        for op in sorted(operacoes, key=lambda x: x["Data"]):
+            if op["Moeda"] != "USDT":
+                por_moeda[op["Moeda"]].append(op)
         resultado = {}
         totais = {
-            'investido_liquido': 0,
-            'realizado': 0,
-            'nao_realizado': 0,
-            'valor_atual': 0,
-            'compras_historicas_usdt': 0,
-            'vendas_historicas_usdt': 0,
+            "investido_liquido": 0.0,
+            "realizado": 0.0,
+            "nao_realizado": 0.0,
+            "valor_atual": float(saldo_caixa),
+            "compras_historicas_usdt": 0.0,
+            "vendas_historicas_usdt": 0.0,
+            "cotacoes_pendentes": [],
+            "avaliacao_completa": True,
+            "caixa_usdt": float(saldo_caixa),
         }
-        for moeda, ops in ops_por_moeda.items():
-            analise_moeda = AnalysisEngine._analisar_moeda(ops, precos_atuais.get(moeda, 0))
-            # Posições encerradas continuam no histórico, inclusive no empate.
-            resultado[moeda] = analise_moeda
-            totais['investido_liquido'] += analise_moeda['custo_posicao_final']
-            totais['realizado'] += analise_moeda['lucro_realizado']
-            totais['nao_realizado'] += analise_moeda['lucro_nao_realizado']
-            totais['valor_atual'] += analise_moeda['valor_atual_posicao']
-            totais['compras_historicas_usdt'] += analise_moeda['total_comprado_usdt']
-            totais['vendas_historicas_usdt'] += analise_moeda['total_vendido_usdt']
-        totais['valor_atual'] += saldo_caixa_usdt
-        if saldo_caixa_usdt > 0.01:
-            resultado['USDT (Caixa)'] = {
-                'quantidade_final': saldo_caixa_usdt,
-                'valor_atual_posicao': saldo_caixa_usdt,
-                'operacoes': [], 'lucro_realizado': 0, 'lucro_nao_realizado': 0, 'lucro_total': 0
+        for moeda, ops in por_moeda.items():
+            preco = AnalysisEngine._preco_disponivel(precos_atuais.get(moeda))
+            analise = AnalysisEngine._analisar_moeda(ops, preco)
+            resultado[moeda] = analise
+            totais["investido_liquido"] += analise["custo_posicao_final"]
+            totais["realizado"] += analise["lucro_realizado"]
+            totais["compras_historicas_usdt"] += analise["total_comprado_usdt"]
+            totais["vendas_historicas_usdt"] += analise["total_vendido_usdt"]
+            if analise["valor_atual_posicao"] is None:
+                totais["cotacoes_pendentes"].append(moeda)
+            else:
+                totais["valor_atual"] += analise["valor_atual_posicao"]
+                totais["nao_realizado"] += analise["lucro_nao_realizado"]
+        if totais["cotacoes_pendentes"]:
+            totais["cotacoes_pendentes"].sort()
+            totais["avaliacao_completa"] = False
+            totais["valor_atual"] = None
+            totais["nao_realizado"] = None
+        if saldo_caixa > 0.01:
+            resultado["USDT (Caixa)"] = {
+                "quantidade_final": float(saldo_caixa),
+                "valor_atual_posicao": float(saldo_caixa),
+                "custo_posicao_final": 0.0,
+                "operacoes": [],
+                "lucro_realizado": 0.0,
+                "lucro_nao_realizado": 0.0,
+                "lucro_total": 0.0,
+                "preco_de_mercado": 1.0,
             }
-        resultado['totais'] = totais
+        resultado["totais"] = totais
         return resultado
 
     @staticmethod
@@ -243,42 +318,49 @@ class AnalysisEngine:
         }
 
     @staticmethod
-    def calcular_distribuicao_portfolio(operacoes: List[Dict], precos_atuais: Dict[str, float]) -> Dict:
+    def calcular_distribuicao_portfolio(
+        operacoes: List[Dict], precos_atuais: Dict[str, float]
+    ) -> Dict:
+        """Uma participação percentual só existe se TODAS as posições estão cotadas."""
         if not operacoes:
-            return {'distribuicao': {}, 'total_valor_portfolio': 0}
-        saldo_info = AnalysisEngine.calcular_saldo_usdt(operacoes)
-        saldo_usdt = saldo_info['saldo_atual']
-        ops_por_moeda = defaultdict(list)
-        for op in sorted(operacoes, key=lambda x: x['Data']):
-            if op['Moeda'] == 'USDT':
-                continue
-            ops_por_moeda[op['Moeda']].append(op)
-        distribuicao = {}
-        total_valor_crypto = 0
-        for moeda, ops in ops_por_moeda.items():
-            analise = AnalysisEngine._analisar_moeda(ops, precos_atuais.get(moeda, 0))
-            quantidade_final = analise.get('quantidade_final', 0)
-            valor_de_mercado = analise.get('valor_atual_posicao', 0)
-            if valor_de_mercado > 0.01:
-                distribuicao[moeda] = {
-                    'valor_atual': valor_de_mercado,
-                    'quantidade': quantidade_final
-                }
-                total_valor_crypto += valor_de_mercado
-        valor_total_portfolio = total_valor_crypto + saldo_usdt
-        if saldo_usdt > 0.01:
-            distribuicao['USDT'] = {
-                'valor_atual': saldo_usdt,
-                'quantidade': saldo_usdt
+            return {
+                "distribuicao": {}, "total_valor_portfolio": 0.0,
+                "avaliacao_completa": True, "cotacoes_pendentes": [],
             }
-        for moeda in distribuicao:
-            if valor_total_portfolio > 0:
-                distribuicao[moeda]['percentual'] = (distribuicao[moeda]['valor_atual'] / valor_total_portfolio) * 100
-            else:
-                distribuicao[moeda]['percentual'] = 0
+        carteira = AnalysisEngine.calcular_portfolio(operacoes, precos_atuais)
+        totais = carteira["totais"]
+        if not totais["avaliacao_completa"]:
+            return {
+                "distribuicao": {},
+                "total_valor_portfolio": None,
+                "total_investido": None,
+                "avaliacao_completa": False,
+                "cotacoes_pendentes": list(totais["cotacoes_pendentes"]),
+            }
+        distribuicao = {}
+        total_crypto = 0.0
+        for moeda, info in carteira.items():
+            if moeda in ("totais", "USDT (Caixa)"):
+                continue
+            valor = info["valor_atual_posicao"]
+            if info["quantidade_final"] > 0 and valor is not None and valor > 0:
+                distribuicao[moeda] = {
+                    "valor_atual": valor,
+                    "quantidade": info["quantidade_final"],
+                }
+                total_crypto += valor
+        caixa = totais["caixa_usdt"]
+        if caixa > 0:
+            distribuicao["USDT"] = {"valor_atual": caixa, "quantidade": caixa}
+        total = totais["valor_atual"]
+        for info in distribuicao.values():
+            info["percentual"] = 100 * info["valor_atual"] / total if total > 0 else 0
         return {
-            'distribuicao': distribuicao,
-            'total_investido': total_valor_crypto
+            "distribuicao": distribuicao,
+            "total_investido": total_crypto,
+            "total_valor_portfolio": total,
+            "avaliacao_completa": True,
+            "cotacoes_pendentes": [],
         }
 
     @staticmethod
@@ -324,19 +406,35 @@ class AnalysisEngine:
                     'preco': float(preco), 'valor': float(valor), 'lucro': float(lucro_venda)
                 })
         qtd_final = float(quantidade_total)
-        custo_final = float(custo_total) if quantidade_total > Decimal('1e-9') else 0
-        valor_atual = qtd_final * preco_atual if preco_atual > 0 else 0
-        lucro_nao_realizado = valor_atual - custo_final if qtd_final > 1e-9 else 0
+        custo_final = float(custo_total) if quantidade_total > Decimal("1e-9") else 0.0
+        aberta = qtd_final > 1e-9
+        preco_validado = AnalysisEngine._preco_disponivel(preco_atual)
+        if not aberta:
+            valor_atual = 0.0
+            lucro_nao_realizado = 0.0
+        elif preco_validado is None:
+            valor_atual = None
+            lucro_nao_realizado = None
+        else:
+            valor_atual = qtd_final * preco_validado
+            lucro_nao_realizado = valor_atual - custo_final
+        realizado = float(lucro_realizado)
         return {
-            'operacoes': operacoes_processadas, 'quantidade_final': qtd_final,
-            'pmc_final': float(pmc), 'custo_posicao_final': custo_final,
-            'valor_atual_posicao': valor_atual, 'lucro_realizado': float(lucro_realizado),
-            'lucro_nao_realizado': lucro_nao_realizado, 'lucro_total': float(lucro_realizado) + lucro_nao_realizado,
-            'preco_de_mercado': preco_atual,
-            # Valores brutos históricos em USDT, inclusive após posição zerada.
-            # Não representam aportes em BRL nem substituem custo da posição aberta.
-            'total_comprado_usdt': float(total_comprado),
-            'total_vendido_usdt': float(total_vendido),
+            "operacoes": operacoes_processadas,
+            "quantidade_final": qtd_final,
+            "pmc_final": float(pmc),
+            "custo_posicao_final": custo_final,
+            "valor_atual_posicao": valor_atual,
+            "lucro_realizado": realizado,
+            "lucro_nao_realizado": lucro_nao_realizado,
+            "lucro_total": (
+                realizado + lucro_nao_realizado
+                if lucro_nao_realizado is not None else None
+            ),
+            "preco_de_mercado": preco_validado if aberta else None,
+            "cotacao_disponivel": not aberta or preco_validado is not None,
+            "total_comprado_usdt": float(total_comprado),
+            "total_vendido_usdt": float(total_vendido),
         }
 
 
