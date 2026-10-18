@@ -436,6 +436,28 @@ class ArmazemSQLite:
             for a, p, f, o, c in linhas
         }
 
+    def quantidade_usdc_de_origem_legada(self) -> int:
+        """Identifica USDC importado sem classificação explícita de contraparte.
+
+        Operações originais mantêm seu id do lote inicial; novas operações
+        possuem ids posteriores e não são confundidas com o histórico legado.
+        """
+        self._conferir_origem()
+        con = self._conectar()
+        try:
+            row = con.execute(
+                "SELECT quantidade_registros FROM importacoes_legadas LIMIT 1"
+            ).fetchone()
+            if row is None:
+                return 0
+            return con.execute(
+                "SELECT COUNT(*) FROM operacoes "
+                "WHERE id <= ? AND UPPER(moeda) = 'USDC'",
+                (row[0],)
+            ).fetchone()[0]
+        finally:
+            con.close()
+
     def diagnostico_integridade(self) -> dict:
         """Lê o estado do SQLite e confere proveniência do backup, sem alterar dados."""
         con = self._conectar()
