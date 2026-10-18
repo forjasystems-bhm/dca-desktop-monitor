@@ -189,20 +189,30 @@ class ArmazemSQLite:
             conn.close()
 
     def _conferir_origem(self):
-        conn = self._conectar()
+        """Verifica o CSV EFETIVAMENTE importado, não um nome padrão do pacote."""
+        con = self._conectar()
         try:
-            registro = conn.execute(
-                "SELECT sha256, caminho_origem FROM importacoes_legadas LIMIT 1"
+            registro = con.execute(
+                "SELECT sha256, caminho_origem, caminho_backup "
+                "FROM importacoes_legadas LIMIT 1"
             ).fetchone()
         finally:
-            conn.close()
-        if registro and self.arquivo_legado and self.arquivo_legado.is_file():
-            if str(self.arquivo_legado) != registro[1]:
-                raise ErroMigracao("Há um CSV legado distinto; conciliação manual necessária.")
-            if hashlib.sha256(self.arquivo_legado.read_bytes()).hexdigest() != registro[0]:
-                raise ErroMigracao(
-                    "CSV legado modificado após a migração. Não ignorar novas operações; "
-                    "preserve os arquivos e concilie antes de continuar.")
+            con.close()
+        if registro is None:
+            return
+        sha, origem, backup = registro
+        original = Path(origem)
+        if original.is_file() and hashlib.sha256(original.read_bytes()).hexdigest() != sha:
+            raise ErroMigracao(
+                "CSV legado modificado após a migração. Preserve os dois arquivos "
+                "e faça conciliação antes de continuar."
+            )
+        copia = Path(backup)
+        if not copia.is_file() or hashlib.sha256(copia.read_bytes()).hexdigest() != sha:
+            raise ErroMigracao(
+                "Backup legado original ausente ou modificado; não substituir "
+                "nem regenerar o arquivo silenciosamente."
+            )
 
     @staticmethod
     def _inserir(con, row: dict[str, str]):
@@ -742,8 +752,23 @@ class ArmazemSQLite:
 
     def exportar_csv(self, destino: Path):
         destino = Path(destino).expanduser().resolve()
-        if self.arquivo_legado and destino == self.arquivo_legado:
-            raise ErroArmazenamento("Proibido sobrescrever o CSV legado.")
+        con = self._conectar()
+        try:
+            registrado = con.execute(
+                "SELECT caminho_origem, caminho_backup "
+                "FROM importacoes_legadas LIMIT 1"
+            ).fetchone()
+        finally:
+            con.close()
+        protegidos = {
+            p.resolve() for p in [self.arquivo_legado] if p is not None
+        }
+        if registrado:
+            protegidos.update(Path(x).resolve() for x in registrado)
+        if destino in protegidos:
+            raise ErroArmazenamento(
+                "Proibido sobrescrever CSV original ou backup da migração."
+            )
         rows = self.listar_preciso()
         destino.parent.mkdir(parents=True, exist_ok=True)
         with destino.open("x", encoding="utf-8", newline="") as f:
