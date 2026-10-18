@@ -163,9 +163,9 @@ class JanelaAplicativo(ctk.CTkToplevel):
             return
         try:
             from config.install import install_windows
-            install_windows()
+            resultado=install_windows()
             self.status_atalho.configure(
-                text="Comando executado. Confira o atalho no Desktop do Windows.",
+                text=f"{resultado['status']} Local: {resultado['atalho']}",
                 text_color=CYAN,
             )
         except Exception as exc:
