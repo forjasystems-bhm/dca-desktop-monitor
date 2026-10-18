@@ -70,7 +70,12 @@ def validar_campos(registro: dict, linha: int) -> None:
         # A UI arredonda a quantidade; tolera apenas 1 centavo ou
         # o efeito máximo de arredondar 8 casas decimais.
         diferenca = abs(quantidade * preco - valor)
-        limite = max(CENTAVO_USDT, preco * TOL_QUANTIDADE)
+        # A tolerância nunca supera 0,01% do valor: evita que operações
+        # pequenas ou preços unitários extremos admitam desvio material.
+        limite = min(
+            max(CENTAVO_USDT, preco * TOL_QUANTIDADE),
+            max(TOL_QUANTIDADE, valor * Decimal("0.0001")),
+        )
         if diferenca > limite:
             raise ErroIntegridadeFinanceira(
                 f"Operação {linha} ({moeda}): Valor_USDT divergente. "
