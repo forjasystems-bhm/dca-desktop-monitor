@@ -46,6 +46,7 @@ class JanelaAnalisePeriodo(ctk.CTkFrame):
         self._filtro_ativo = ctk.StringVar(value="Todos os ativos")
         self._indicadores = {}
         self._busca_historica_ativa = False
+        self._ultimo_historico = None
         self._construir()
         self.after(150, self.atualizar)
 
@@ -207,6 +208,13 @@ class JanelaAnalisePeriodo(ctk.CTkFrame):
         self._btn_buscar_cotacoes.grid(
             row=1, column=2, padx=6, pady=6, sticky="w"
         )
+        self._btn_detalhar_historico = ctk.CTkButton(
+            frame, text="Detalhar por ativo", width=150,
+            state="disabled", command=self._detalhar_ativos_na_data
+        )
+        self._btn_detalhar_historico.grid(
+            row=1, column=3, padx=(6, 12), pady=6, sticky="w"
+        )
         self._historico_valores = ctk.CTkLabel(
             frame, text="Selecione uma data encerrada para consultar o SQLite.",
             font=ctk.CTkFont("Segoe UI", 12), text_color=TEXT_SECONDARY,
@@ -236,6 +244,8 @@ class JanelaAnalisePeriodo(ctk.CTkFrame):
             resultado = patrimonio_historico_na_data(
                 self._dados._store, dia
             )
+            self._ultimo_historico = resultado
+            self._btn_detalhar_historico.configure(state="normal")
             if resultado["completo"]:
                 valor = f"{self._valor(resultado['patrimonio_total'])} USDT"
                 total = f"{self._valor(resultado['resultado_total'])} USDT"
@@ -260,10 +270,70 @@ class JanelaAnalisePeriodo(ctk.CTkFrame):
             self._historico_valores.configure(text=texto, text_color=cor)
             return resultado
         except Exception as exc:
+            self._ultimo_historico = None
+            self._btn_detalhar_historico.configure(state="disabled")
             self._historico_valores.configure(
                 text=f"Não é possível apurar: {exc}", text_color=NEON_RED
             )
             return None
+
+    def _detalhar_ativos_na_data(self):
+        """Exibe valores históricos INDIVIDUAIS, sem recorrer ao preço atual."""
+        resultado = self._ultimo_historico
+        if resultado is None:
+            return
+        janela = ctk.CTkToplevel(self)
+        janela.title(f"DCA — Ativos em {resultado['data_utc']} (USDT)")
+        janela.geometry("1160x420")
+        janela.minsize(850, 300)
+        ctk.CTkLabel(
+            janela,
+            text=f"PATRIMÔNIO HISTÓRICO POR ATIVO · {resultado['data_utc']} · USDT",
+            font=ctk.CTkFont("Segoe UI", 16, "bold"),
+            text_color=TEXT_PRIMARY
+        ).pack(anchor="w", padx=20, pady=(17, 6))
+        ctk.CTkLabel(
+            janela,
+            text="Cotação = fechamento UTC do dia gravado no SQLite. "
+                 "Sem cotação, posição aberta fica INDISPONÍVEL; "
+                 "posição encerrada preserva o resultado realizado.",
+            font=ctk.CTkFont("Segoe UI", 11), text_color=TEXT_SECONDARY
+        ).pack(anchor="w", padx=20, pady=(0, 10))
+        cols = ("ativo", "qtd", "custo", "cotacao", "mercado", "realizado", "nao_realizado")
+        frm = tk.Frame(janela, bg=BG_CARD)
+        frm.pack(fill="both", expand=True, padx=20, pady=(0, 20))
+        table = ttk.Treeview(frm, columns=cols, show="headings",
+                             style="DCAAsset.Treeview")
+        titles = ("Ativo", "Quantidade", "Custo aberto",
+                  "Preço UTC/USDT", "Valor histórico", "P/L realizado", "P/L aberto")
+        for idx, (key, title) in enumerate(zip(cols, titles)):
+            table.heading(key, text=title)
+            table.column(key, width=160 if idx != 0 else 100,
+                         anchor="w" if idx == 0 else "e", minwidth=90)
+        for ativo, p in resultado["ativos"].items():
+            cot = p["cotacao"]
+            preco = (
+                self._valor(cot["preco"], 6) if cot else
+                ("—" if p["quantidade"] == 0 else "INDISPONÍVEL")
+            )
+            def fmt(valor, casas=2):
+                return self._valor(valor, casas) if valor is not None else "INDISPONÍVEL"
+            table.insert("", "end", values=(
+                ativo, fmt(p["quantidade"], 8), fmt(p["custo_aberto"]),
+                preco, fmt(p["valor_mercado"]), fmt(p["lucro_realizado"]),
+                fmt(p["nao_realizado"])
+            ))
+        sx = ttk.Scrollbar(frm, orient="horizontal", command=table.xview)
+        sy = ttk.Scrollbar(frm, orient="vertical", command=table.yview)
+        table.configure(xscrollcommand=sx.set, yscrollcommand=sy.set)
+        frm.grid_rowconfigure(0, weight=1)
+        frm.grid_columnconfigure(0, weight=1)
+        table.grid(row=0, column=0, sticky="nsew")
+        sy.grid(row=0, column=1, sticky="ns")
+        sx.grid(row=1, column=0, sticky="ew")
+        self._detalhes_janela = janela
+        self._detalhes_tabela = table
+        return janela
 
     def _buscar_cotacoes_historicas(self):
         if self._busca_historica_ativa:
