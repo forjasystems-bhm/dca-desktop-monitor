@@ -138,6 +138,16 @@ class ArmazemSQLite:
             raise
 
     def _inicializar(self):
+        # Schema migrations require a verifiable snapshot BEFORE any ALTER.
+        if self.arquivo_db.is_file() and self.arquivo_db.stat().st_size:
+            with sqlite3.connect(self.arquivo_db.as_uri() + "?mode=ro", uri=True) as verify:
+                version = verify.execute("PRAGMA user_version").fetchone()[0]
+            if version < 4:
+                from backend.backup_sqlite import criar_backup_sqlite
+                criar_backup_sqlite(
+                    self.arquivo_db, self.diretorio / "backups" / "sqlite",
+                    motivo=f"antes_schema_v{version}_para_v4",
+                )
         conn = self._conectar()
         try:
             conn.execute("PRAGMA journal_mode=WAL")
@@ -421,6 +431,16 @@ class ArmazemSQLite:
         return row[0] if row else None
 
     @staticmethod
+    def _saldos_transacionais(con) -> list[dict]:
+        rows = con.execute(
+            "SELECT data_posicao,moeda,quantidade,custodia,custo_total_usdt,observacao "
+            "FROM posicoes_iniciais ORDER BY id"
+        ).fetchall()
+        return [dict(zip(
+            ("Data", "Moeda", "Quantidade", "Custodia", "Custo_Total_USDT", "Observacao"), row
+        )) for row in rows]
+
+    @staticmethod
     def _livro_transacional(con) -> list[dict]:
         """Estado completo lido sob o lock de gravação da MESMA transação."""
         linhas = con.execute(
@@ -434,7 +454,7 @@ class ArmazemSQLite:
         from backend.operation_integrity import validar_livro, ErroIntegridadeFinanceira
         historico = self.listar_preciso()
         try:
-            validar_livro(historico)
+            validar_livro(historico, self.listar_posicoes_iniciais())
         except ErroIntegridadeFinanceira as exc:
             return {"consistente": False, "erro": str(exc), "registros": len(historico)}
         return {"consistente": True, "erro": None, "registros": len(historico)}
@@ -449,7 +469,7 @@ class ArmazemSQLite:
         try:
             con.execute("BEGIN IMMEDIATE")
             livro = self._livro_transacional(con)
-            validar_livro(livro + [row])
+            validar_livro(livro + [row], self._saldos_transacionais(con))
             self._inserir(con, row)
             con.execute("COMMIT")
             return True
@@ -479,7 +499,7 @@ class ArmazemSQLite:
                     "Exclua e registre novamente após verificar os saldos."
                 )
             livro[indice] = row
-            validar_livro(livro)
+            validar_livro(livro, self._saldos_transacionais(con))
             con.execute(
                 "UPDATE operacoes SET data=?, moeda=?, operacao=?, valor_usdt=?, "
                 "preco=?, quantidade=?, taxa_brl=?, taxa_corretagem_usdt=? WHERE id=?",
@@ -505,7 +525,7 @@ class ArmazemSQLite:
             from backend.operation_integrity import validar_livro
             livro = self._livro_transacional(con)
             del livro[indice]
-            validar_livro(livro)
+            validar_livro(livro, self._saldos_transacionais(con))
             con.execute("DELETE FROM operacoes WHERE id=?", (id_operacao,))
             con.execute("COMMIT")
             return True
@@ -644,7 +664,16 @@ class ArmazemSQLite:
         finally:
             con.close()
 
+        saldos_abertura = con = None
+        con2 = self._conectar()
+        try:
+            saldos_abertura = con2.execute(
+                "SELECT COUNT(*) FROM posicoes_iniciais"
+            ).fetchone()[0]
+        finally:
+            con2.close()
         resultado = {
+            "saldos_iniciais": saldos_abertura,
             "banco": str(self.arquivo_db),
             "integridade_sqlite": integridade,
             "operacoes_atuais": total_atual,
