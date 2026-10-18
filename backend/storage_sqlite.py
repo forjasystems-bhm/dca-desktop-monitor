@@ -695,6 +695,12 @@ class ArmazemSQLite:
                 validar_livro(
                     self._livro_transacional(con), self._saldos_transacionais(con)
                 )
+            else:
+                from backend.custody_ledger import apurar_custodia
+                apurar_custodia(
+                    self._externos_transacionais(con),
+                    self._movimentos_transacionais(con),
+                )
             con.execute(
                 "INSERT INTO ajustes_posicoes "
                 "(tabela_origem,id_posicao,antes_json,depois_json,motivo,alterado_em_utc) "
