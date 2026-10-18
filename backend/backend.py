@@ -244,8 +244,11 @@ class AnalysisEngine:
         saldo_caixa = AnalysisEngine.calcular_saldo_usdt(operacoes)["saldo_atual"]
         por_moeda = defaultdict(list)
         for op in sorted(operacoes, key=lambda x: x["Data"]):
-            if op["Moeda"] != "USDT":
+            if op["Moeda"] not in ("USDT", "USDC"):
                 por_moeda[op["Moeda"]].append(op)
+        from backend.stablecoin_ledger import saldos_stablecoins
+        stable = saldos_stablecoins(operacoes)
+        saldo_usdc = stable["saldos"]["USDC"]
         resultado = {}
         totais = {
             "investido_liquido": 0.0,
@@ -257,6 +260,8 @@ class AnalysisEngine:
             "cotacoes_pendentes": [],
             "avaliacao_completa": True,
             "caixa_usdt": float(saldo_caixa),
+            "caixa_usdc": float(saldo_usdc),
+            "base_de_custo_incompleta": saldo_usdc > 0,
         }
         for moeda, ops in por_moeda.items():
             preco = AnalysisEngine._preco_disponivel(precos_atuais.get(moeda))
@@ -271,10 +276,35 @@ class AnalysisEngine:
             else:
                 totais["valor_atual"] += analise["valor_atual_posicao"]
                 totais["nao_realizado"] += analise["lucro_nao_realizado"]
+        if saldo_usdc > 0:
+            preco_usdc = AnalysisEngine._preco_disponivel(precos_atuais.get("USDC"))
+            valor_usdc = float(saldo_usdc * Decimal(str(preco_usdc))) if preco_usdc is not None else None
+            resultado["USDC (Caixa)"] = {
+                "quantidade_final": float(saldo_usdc),
+                "valor_atual_posicao": valor_usdc,
+                "custo_posicao_final": None,
+                "operacoes": [],
+                "lucro_realizado": None,
+                "lucro_nao_realizado": None,
+                "lucro_total": None,
+                "preco_de_mercado": preco_usdc,
+                "pmc_final": None,
+                "total_comprado_usdt": 0.0,
+                "total_vendido_usdt": 0.0,
+                "transferencia_externa": True,
+            }
+            if valor_usdc is None:
+                totais["cotacoes_pendentes"].append("USDC")
+            else:
+                totais["valor_atual"] += valor_usdc
         if totais["cotacoes_pendentes"]:
             totais["cotacoes_pendentes"].sort()
             totais["avaliacao_completa"] = False
             totais["valor_atual"] = None
+            totais["nao_realizado"] = None
+        elif saldo_usdc > 0:
+            # Patrimônio é apurável com USDC/USDT real. P/L agregado não:
+            # depósitos externos em USDC não comprovam custo de aquisição.
             totais["nao_realizado"] = None
         if saldo_caixa > 0.01:
             resultado["USDT (Caixa)"] = {
@@ -311,6 +341,9 @@ class AnalysisEngine:
                         'data': op['Data'], 'tipo': 'saque_usdt', 'valor': float(valor_usdt),
                         'saldo_apos': float(saldo_usdt), 'descricao': f"Saque de ${float(valor_usdt):,.2f} USDT"
                     })
+            elif moeda == "USDC":
+                # Depósitos e saques de USDC não movimentam a conta USDT.
+                continue
             else:
                 if tipo == 'compra':
                     saldo_usdt -= valor_usdt
@@ -367,7 +400,8 @@ class AnalysisEngine:
                 continue
             valor = info["valor_atual_posicao"]
             if info["quantidade_final"] > 0 and valor is not None and valor > 0:
-                distribuicao[moeda] = {
+                label = "USDC" if moeda == "USDC (Caixa)" else moeda
+                distribuicao[label] = {
                     "valor_atual": valor,
                     "quantidade": info["quantidade_final"],
                 }
@@ -497,6 +531,9 @@ class AnalysisEngine:
                     custo_brl       -= custo_venda
                     quantidade_usdt -= qtd_saque
 
+            elif moeda == "USDC":
+                # USDC é transferência independente, não negociação USDT.
+                continue
             else:
                 if tipo == 'compra' and quantidade_usdt > 0:
                     qtd_gasta = min(valor, quantidade_usdt)
