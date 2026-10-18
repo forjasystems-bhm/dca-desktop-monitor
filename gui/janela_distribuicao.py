@@ -37,6 +37,11 @@ _DET_COLS = (
 )
 _N = len(_DET_COLS)
 
+# Fixed, readable column widths. A horizontal scrollbar exposes the right side
+# instead of squeezing ten financial columns into half of a small window.
+_DET_COL_WIDTHS = (105, 132, 128, 138, 150, 137, 160, 146, 145, 110)
+_DET_TABLE_WIDTH = sum(width + 16 for width in _DET_COL_WIDTHS) + 26
+
 _ALINHAMENTOS = ["w", "w", "w", "w", "w", "w", "w", "w", "w", "w"]
 
 
@@ -128,7 +133,7 @@ class JanelaDistribuicao(ctk.CTkFrame):
         right.grid(row=0, column=1, sticky="nsew", padx=(0, 5), pady=(4, 0))
         right.columnconfigure(0, weight=1)
         right.rowconfigure(0, weight=2)
-        right.rowconfigure(1, weight=3)
+        right.rowconfigure(1, weight=4)
 
         donut_outer, donut_inner = _secao(right, " Performance P/L por Ativo ")
         donut_outer.grid(row=0, column=0, sticky="nsew", pady=(0, 6))
@@ -138,24 +143,64 @@ class JanelaDistribuicao(ctk.CTkFrame):
         detalhe_outer, detalhe_inner = _secao(right, " Análise Detalhada de P&L ")
         detalhe_outer.grid(row=1, column=0, sticky="nsew")
 
-        header = ctk.CTkFrame(detalhe_inner, fg_color=BG_DEEP, corner_radius=6)
+        ctk.CTkLabel(
+            detalhe_inner,
+            text="Arraste a barra inferior para ver todas as colunas  →",
+            font=ctk.CTkFont("Segoe UI", 11),
+            text_color=TEXT_SECONDARY,
+        ).pack(anchor="w", padx=5, pady=(0, 3))
+
+        # A tabela integra dois scrolls independentes: horizontal para
+        # colunas e vertical para posições. A apresentação original é mantida.
+        self._det_canvas = tk.Canvas(
+            detalhe_inner, bg=BG_CARD, highlightthickness=0, bd=0,
+            height=200,
+        )
+        self._det_canvas.pack(fill="both", expand=True)
+        self._det_hbar = ctk.CTkScrollbar(
+            detalhe_inner, orientation="horizontal",
+            command=self._det_canvas.xview, height=12,
+            fg_color=BG_CARD, button_color=BORDER,
+            button_hover_color=CYAN,
+        )
+        self._det_hbar.pack(fill="x", padx=4, pady=(3, 0))
+        self._det_canvas.configure(xscrollcommand=self._det_hbar.set)
+
+        det_body = ctk.CTkFrame(
+            self._det_canvas, fg_color=BG_CARD, corner_radius=0,
+            width=_DET_TABLE_WIDTH,
+        )
+        canvas_item = self._det_canvas.create_window(
+            (0, 0), anchor="nw", window=det_body, width=_DET_TABLE_WIDTH,
+        )
+
+        def ajustar_altura(event):
+            self._det_canvas.itemconfigure(canvas_item, height=max(80, event.height))
+            self._det_canvas.configure(scrollregion=(
+                0, 0, _DET_TABLE_WIDTH, max(80, event.height)
+            ))
+
+        self._det_canvas.bind("<Configure>", ajustar_altura, add="+")
+
+        header = ctk.CTkFrame(det_body, fg_color=BG_DEEP, corner_radius=6)
         header.pack(fill="x", padx=(4, 16), pady=(0, 2))
-        for i in range(_N):
-            header.columnconfigure(i, weight=1, uniform="tabela_col")
+        for i, width in enumerate(_DET_COL_WIDTHS):
+            header.columnconfigure(i, weight=0, minsize=width + 16)
         for i, (txt, anchor) in enumerate(zip(_DET_COLS, _ALINHAMENTOS)):
             ctk.CTkLabel(
                 header, text=txt, font=_FONT_HEAD,
-                text_color=TEXT_SECONDARY, fg_color="transparent", anchor=anchor,
-            ).grid(row=0, column=i, sticky="ew", padx=10, pady=6)
+                width=_DET_COL_WIDTHS[i],
+                text_color=TEXT_SECONDARY, fg_color="transparent",
+                anchor=anchor,
+            ).grid(row=0, column=i, sticky="ew", padx=8, pady=6)
 
         self._det_scroll = ctk.CTkScrollableFrame(
-            detalhe_inner, fg_color=BG_CARD,
+            det_body, fg_color=BG_CARD,
             scrollbar_button_color=BORDER,
             scrollbar_button_hover_color=TEXT_MUTED,
             corner_radius=6,
         )
         self._det_scroll.pack(fill="both", expand=True)
-        self._det_scroll.columnconfigure(0, weight=1)
         self._bind_det_scroll(self._det_scroll)
 
     def _bind_det_scroll(self, frame: ctk.CTkScrollableFrame):
@@ -523,17 +568,18 @@ class JanelaDistribuicao(ctk.CTkFrame):
             row.pack(fill="x", pady=0)
             row._bg_normal = bg
 
-            for i in range(_N):
-                row.columnconfigure(i, weight=1, uniform="tabela_col")
+            for i, width in enumerate(_DET_COL_WIDTHS):
+                row.columnconfigure(i, weight=0, minsize=width + 16)
 
             row_labels = []
             for i, (txt, cor, anchor) in enumerate(zip(valores, _col_cores, _ALINHAMENTOS)):
                 lbl = ctk.CTkLabel(
                     row, text=txt, font=_F_TREE,
+                    width=_DET_COL_WIDTHS[i],
                     text_color=cor, fg_color="transparent",
                     anchor=anchor, cursor="hand2",
                 )
-                lbl.grid(row=0, column=i, sticky="ew", padx=10, pady=3)
+                lbl.grid(row=0, column=i, sticky="ew", padx=8, pady=3)
                 lbl.bind("<Button-1>", lambda e, r=row: self._toggle_det_sel(r))
                 lbl.bind("<Enter>",    lambda e, r=row: self._hover_det(r, True))
                 lbl.bind("<Leave>",    lambda e, r=row: self._hover_det(r, False))
