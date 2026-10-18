@@ -23,6 +23,7 @@ from gui.janela_registro_logica import JanelaRegistro
 from gui.janela_caixa import JanelaCaixa
 from gui.janela_moedas import JanelaMoedas
 from gui.janela_analise_periodo import JanelaAnalisePeriodo
+from gui.janela_primeiro_uso import JanelaPrimeiroUso
 
 from config.tema_cripto import (
     aplicar_tema,
@@ -59,6 +60,7 @@ class PortfolioDCA:
         self._closing = False
         self._refresh_lock = threading.Lock()
         self._initial_refresh_id = None
+        self._primeiro_uso_janela = None
 
         self.janela = janela
         self.janela.title("Portfolio CRIPTO — Dashboard Interativo")
@@ -71,6 +73,9 @@ class PortfolioDCA:
         self._criar_interface()
         self._preencher_dados_iniciais()
         self._iniciar_atualizacoes_automaticas()
+        if (not self.data_manager.carregar_operacoes_precisas()
+                and not self.data_manager.carregar_posicoes_iniciais()):
+            self.janela.after(500, self._abrir_primeiro_uso)
         # A GUI já pode consultar os dados locais neste ponto.
         # Binance nunca bloqueia a inicialização do aplicativo.
         self.aba_distribuicao.set_status(
@@ -84,6 +89,28 @@ class PortfolioDCA:
             self.aba_distribuicao.set_status(
                 "Offline · cotações indisponíveis", "#e3b341"
             )
+
+    def _abrir_primeiro_uso(self):
+        if self._closing:
+            return
+        if (self._primeiro_uso_janela is not None
+                and self._primeiro_uso_janela.winfo_exists()):
+            self._primeiro_uso_janela.lift()
+            self._primeiro_uso_janela.focus_force()
+            return
+        janela = ctk.CTkToplevel(self.janela)
+        self._primeiro_uso_janela = janela
+        janela.title("DCA Monitor · Primeira utilização e dados anteriores")
+        largura = max(940, min(1030, janela.winfo_screenwidth() - 70))
+        altura = max(650, min(850, janela.winfo_screenheight() - 100))
+        janela.geometry(f"{largura}x{altura}+35+35")
+        janela.minsize(870, 610)
+        JanelaPrimeiroUso(
+            janela, self.data_manager,
+            on_change=lambda: self._atualizar_abas_seguro(False),
+            on_begin_empty=lambda: janela.destroy(),
+        ).pack(fill="both", expand=True)
+        janela.lift()
 
     def _aplicar_cursor_abas(self):
         try:
@@ -133,6 +160,11 @@ class PortfolioDCA:
             font=ctk.CTkFont(_FONT, 9, "bold"),
             text_color=TEXT_SECONDARY,
         ).pack(side="right", padx=10)
+        ctk.CTkButton(
+            status_bar, text="Dados iniciais / Importar CSV",
+            command=self._abrir_primeiro_uso, height=24, width=180,
+            fg_color=BG_CARD, text_color=BTC_ORANGE, hover_color=BG_SURFACE,
+        ).pack(side="left", padx=8)
 
         if self._preview_data01:
             self._montar_validacao_data01()
@@ -327,7 +359,11 @@ class PortfolioDCA:
                 if self._closing:
                     return
                 self._atualizar_status("⟳ Consultando cotações...", CYAN)
-                moedas = list(dict.fromkeys(MOEDAS_SUPORTADAS))
+                moedas = list(dict.fromkeys(
+                    list(MOEDAS_SUPORTADAS)
+                    + [str(x["Moeda"]) for x in self.data_manager.carregar_posicoes_iniciais()]
+                    + [str(x["Moeda"]) for x in self.data_manager.carregar_operacoes_precisas()]
+                ))
                 if "USDC" not in moedas:
                     operacoes = self.data_manager.carregar_operacoes_precisas()
                     if any(str(op["Moeda"]).upper() == "USDC" for op in operacoes):
@@ -404,6 +440,9 @@ class PortfolioDCA:
         if self._closing:
             return
         self._closing = True
+        if (self._primeiro_uso_janela is not None
+                and self._primeiro_uso_janela.winfo_exists()):
+            self._primeiro_uso_janela.destroy()
         self._countdown_ativo = False
         self._stop_updates = True
         for after_id in (self._after_id, self._initial_refresh_id):
