@@ -29,7 +29,8 @@ def _decimal_seguro(value: Any) -> Decimal | None:
 
 def auditar_carteira_atual(
     operacoes: list[dict], portfolio: dict, *, data_referencia: date | None = None,
-    saldos_iniciais: list[dict] | None = None
+    saldos_iniciais: list[dict] | None = None,
+    saldos_externos: list[dict] | None = None
 ) -> dict:
     """Reconciles gross external flows with actual cash+marked-to-market.
 
@@ -55,7 +56,7 @@ def auditar_carteira_atual(
     if not isinstance(day, date) or isinstance(day, datetime):
         motivos.append("Data de avaliação inválida.")
         return resposta
-    if saldos_iniciais:
+    if saldos_iniciais or saldos_externos:
         motivos.append('Saldo inicial declarado sem fluxo externo documentado; rentabilidade consolidada não apurada.')
         return resposta
     if not operacoes:
