@@ -248,17 +248,24 @@ class JanelaAnalisePeriodo(ctk.CTkFrame):
             self._btn_detalhar_historico.configure(state="normal")
             if resultado["completo"]:
                 valor = f"{self._valor(resultado['patrimonio_total'])} USDT"
-                total = f"{self._valor(resultado['resultado_total'])} USDT"
+                pl_nao = resultado["lucro_nao_realizado"]
+                pl_total = resultado["resultado_total"]
+                total = (
+                    f"{self._valor(pl_total)} USDT"
+                    if pl_total is not None else "Não apurado — custo de USDC desconhecido"
+                )
+                nr = (
+                    f"{self._valor(pl_nao)} USDT"
+                    if pl_nao is not None else "Não apurado"
+                )
                 texto = (
                     f"Patrimônio em {dia}: {valor}  |  "
-                    f"P/L realizado acumulado: "
-                    f"{self._valor(resultado['lucro_realizado'])} USDT  |  "
-                    f"P/L não realizado: "
-                    f"{self._valor(resultado['lucro_nao_realizado'])} USDT  |  "
-                    f"P/L total: {total}  |  Caixa: "
-                    f"{self._valor(resultado['caixa_usdt'])} USDT"
+                    f"P/L realizado: {self._valor(resultado['lucro_realizado'])} USDT"
+                    f"  |  P/L não realizado: {nr}  |  P/L total: {total}"
+                    f"  |  Caixa USDT: {self._valor(resultado['caixa_usdt'])}"
+                    f"  |  USDC: {self._valor(resultado['saldo_usdc'])} unidades"
                 )
-                cor = NEON_GREEN
+                cor = CYAN if pl_total is None else NEON_GREEN
             else:
                 texto = (
                     f"Patrimônio em {dia}: INDISPONÍVEL — "
@@ -347,6 +354,8 @@ class JanelaAnalisePeriodo(ctk.CTkFrame):
                 nome for nome, valores in model["ativos"].items()
                 if valores["quantidade"] > 0
             ]
+            if model["saldo_usdc"] > 0:
+                ativos_abertos.append("USDC")
             if not ativos_abertos:
                 self._apurar_valor_historico()
                 return
@@ -488,5 +497,9 @@ class JanelaAnalisePeriodo(ctk.CTkFrame):
                 f" Aportes externos no período: "
                 f"{self._valor(self._analise['aportes_periodo_usdt'])} USDT; "
                 f"retiradas: {self._valor(self._analise['saques_periodo_usdt'])} USDT."
+                f" Fluxos USDC independentes: entradas "
+                f"{self._valor(self._analise['entradas_periodo_usdc'])}; "
+                f"saídas {self._valor(self._analise['saidas_periodo_usdc'])}; "
+                f"saldo {self._valor(self._analise['saldo_usdc'])} USDC."
             )
         self._status.configure(text=msg, text_color=TEXT_SECONDARY)
