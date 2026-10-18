@@ -154,6 +154,34 @@ class CustodiaForaCSVTests(unittest.TestCase):
             self.dm.prever_csv(str(self.csv))
         self.assertEqual(self.csv.read_bytes(),self.original)
 
+    def test_initial_balance_correction_cannot_invalidate_prior_sale(self):
+        # A separate new user holds 1 BTC initially, then sells 0.6.
+        fresh = DataManager(
+            legacy_csv=self.root/"nenhum.csv",
+            data_dir=self.root/"usuario_novo",
+            auto_import_legacy=False,
+        )
+        fresh.registrar_posicao_inicial(
+            moeda="BTC",quantidade="1",custodia="Ledger",
+            data_posicao="2026-09-30",custo_total_usdt="100",
+        )
+        fresh.registrar_posicao_inicial(
+            moeda="USDT",quantidade="0.01",custodia="Exchange",
+            data_posicao="2026-09-30",
+        )
+        self.assertTrue(fresh.salvar_operacao([
+            "2026-10-01 12:00:00","BTC","venda","90","150","0.6","5.2","0",
+        ]), fresh.ultimo_erro)
+        before=fresh.carregar_posicoes_iniciais()
+        with self.assertRaises(Exception):
+            fresh.corrigir_posicao(
+                origem="inicial",moeda="BTC",custodia="Ledger",
+                quantidade="0.4",custo_total_usdt="40",
+                motivo="Conferência posterior da carteira",
+            )
+        self.assertEqual(fresh.carregar_posicoes_iniciais(),before)
+        self.assertEqual(fresh.carregar_auditoria_posicoes(),[])
+
     def test_external_usdt_usdc_are_cash_not_buy_volume(self):
         self.dm.registrar_posicao_externa(
             moeda="USDT",quantidade="40",custodia="Cold storage",
