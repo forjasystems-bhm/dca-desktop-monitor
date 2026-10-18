@@ -138,7 +138,17 @@ class ArmazemSQLite:
                 sha256 TEXT PRIMARY KEY, caminho_origem TEXT NOT NULL,
                 caminho_backup TEXT NOT NULL, quantidade_registros INTEGER NOT NULL,
                 importado_em TEXT NOT NULL)""")
-            conn.execute("PRAGMA user_version=1")
+            conn.execute("""CREATE TABLE IF NOT EXISTS cotacoes_historicas (
+                data_utc TEXT NOT NULL,
+                ativo TEXT NOT NULL,
+                moeda_cotacao TEXT NOT NULL,
+                preco TEXT NOT NULL,
+                fonte TEXT NOT NULL,
+                abertura_utc_ms INTEGER NOT NULL,
+                capturado_em_utc TEXT NOT NULL,
+                PRIMARY KEY (data_utc, ativo, moeda_cotacao)
+            )""")
+            conn.execute("PRAGMA user_version=2")
         finally:
             conn.close()
 
@@ -296,6 +306,98 @@ class ArmazemSQLite:
             raise
         finally:
             con.close()
+
+    def salvar_cotacoes_historicas(self, registros: list[dict], *, hoje_utc=None) -> int:
+        """Lote ACID, registros imutáveis. Duplicata idêntica é idempotente."""
+        from backend.historical_prices import validar_data_encerrada, ErroCotacaoHistorica
+        from datetime import date as Date
+
+        checados = []
+        for r in registros:
+            try:
+                dia = Date.fromisoformat(r["data_utc"])
+                validar_data_encerrada(dia, hoje_utc)
+                ativo = str(r["ativo"]).strip().upper()
+                if not ativo.isascii() or not ativo.isalnum() or ativo == "USDT":
+                    raise ValueError("ativo inválido")
+                if r["moeda_cotacao"] != "USDT":
+                    raise ValueError("par de cotação diferente de USDT")
+                if r["fonte"] != "Binance/CCXT:OHLCV:1d:close":
+                    raise ValueError("fonte não identificada/permitida")
+                preco = Decimal(str(r["preco"]))
+                if not preco.is_finite() or preco <= 0:
+                    raise ValueError("preço não positivo/finito")
+                esperado_ms = int(datetime.combine(
+                    dia, datetime.min.time(), __import__("datetime").timezone.utc
+                ).timestamp() * 1000)
+                if r["abertura_utc_ms"] != esperado_ms:
+                    raise ValueError("instante do candle não corresponde à data")
+                origem = datetime.fromisoformat(r["capturado_em_utc"])
+                if origem.tzinfo is None or origem.utcoffset() is None:
+                    raise ValueError("captura sem fuso horário")
+            except (KeyError, ValueError, TypeError, InvalidOperation, OverflowError) as exc:
+                raise ErroCotacaoHistorica(f"Registro histórico inválido: {exc}") from exc
+            checados.append((
+                dia.isoformat(), ativo, "USDT", str(preco),
+                r["fonte"], esperado_ms, r["capturado_em_utc"]
+            ))
+        if not checados:
+            return 0
+        con = self._conectar()
+        inseridos = 0
+        try:
+            con.execute("BEGIN IMMEDIATE")
+            for row in checados:
+                antigo = con.execute(
+                    "SELECT preco, fonte, abertura_utc_ms FROM cotacoes_historicas "
+                    "WHERE data_utc=? AND ativo=? AND moeda_cotacao=?",
+                    row[:3],
+                ).fetchone()
+                if antigo:
+                    if (Decimal(antigo[0]) != Decimal(row[3])
+                        or antigo[1] != row[4] or antigo[2] != row[5]):
+                        raise ErroCotacaoHistorica(
+                            f"Cotação {row[1]} em {row[0]} já registrada com valor/origem diferente."
+                        )
+                    continue
+                con.execute(
+                    "INSERT INTO cotacoes_historicas (data_utc, ativo, moeda_cotacao, "
+                    "preco, fonte, abertura_utc_ms, capturado_em_utc) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?)", row,
+                )
+                inseridos += 1
+            con.execute("COMMIT")
+            return inseridos
+        except Exception:
+            if con.in_transaction:
+                con.execute("ROLLBACK")
+            raise
+        finally:
+            con.close()
+
+    def ler_cotacoes_historicas(self, data_utc) -> dict:
+        """SOMENTE banco local; não consulta nem reutiliza o cache da Binance."""
+        from datetime import date as Date
+        dia = data_utc if isinstance(data_utc, Date) else Date.fromisoformat(data_utc)
+        if isinstance(dia, datetime):
+            raise ValueError("É necessária uma data, não um timestamp.")
+        self._conferir_origem()
+        con = self._conectar()
+        try:
+            linhas = con.execute(
+                "SELECT ativo, preco, fonte, abertura_utc_ms, capturado_em_utc "
+                "FROM cotacoes_historicas WHERE data_utc=? AND moeda_cotacao='USDT'",
+                (dia.isoformat(),)
+            ).fetchall()
+        finally:
+            con.close()
+        return {
+            a: {
+                "preco": Decimal(p), "fonte": f, "abertura_utc_ms": o,
+                "capturado_em_utc": c, "data_utc": dia.isoformat(),
+            }
+            for a, p, f, o, c in linhas
+        }
 
     def diagnostico_integridade(self) -> dict:
         """Lê o estado do SQLite e confere proveniência do backup, sem alterar dados."""
