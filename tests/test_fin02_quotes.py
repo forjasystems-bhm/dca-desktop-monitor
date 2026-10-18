@@ -85,7 +85,7 @@ class IntegridadeCotacaoTests(unittest.TestCase):
         self.assertEqual(p["totais"]["cotacoes_pendentes"], [])
 
     def test_preco_zero_nulo_negativo_nan_infinito_nao_sao_cotacoes(self):
-        for preco in [None, 0, -10, "NaN", "Infinity", float("inf"), "x"]:
+        for preco in [None, 0, -10, "NaN", "Infinity", float("inf"), "x", "1e9999", "1e-9999"]:
             with self.subTest(preco=preco):
                 p = AnalysisEngine.calcular_portfolio(self.ops, {"BTC": preco, "ETH": 50})
                 self.assertFalse(p["totais"]["avaliacao_completa"])
