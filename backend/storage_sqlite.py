@@ -318,7 +318,21 @@ class ArmazemSQLite:
         diagnostico = self.diagnostico_integridade()
         if diagnostico["status"] != "OK" or not diagnostico["backup_valido"]:
             raise ErroMigracao("Migração concluída sem backup íntegro — acesso bloqueado.")
+        try:
+            from backend.backup_sqlite import criar_backup_sqlite
+            snapshot = criar_backup_sqlite(
+                self.arquivo_db, self.diretorio / "backups" / "sqlite",
+                motivo="depois_importacao_csv",
+            )
+            snapshot_path, aviso = snapshot["manifesto"], None
+        except Exception as exc:
+            # Importação já foi COMMITADA e o CSV original tem backup por hash.
+            # NUNCA mentir que a migração foi revertida só porque backup falhou.
+            snapshot_path, aviso = None, (
+                "Importação gravada, mas backup SQLite falhou: " + str(exc)
+            )
         return {**preview, "importadas": linhas, "backup_valido": True,
+                "backup_sqlite": snapshot_path, "aviso_backup_sqlite": aviso,
                 "banco": str(self.arquivo_db)}
 
     def informar_custo_inicial(self, moeda: str, custodia: str,
@@ -433,8 +447,23 @@ class ArmazemSQLite:
             raise
         finally:
             con.close()
+        try:
+            from backend.backup_sqlite import criar_backup_sqlite
+            snapshot = criar_backup_sqlite(
+                self.arquivo_db, self.diretorio / "backups" / "sqlite",
+                motivo="depois_saldo_inicial",
+            )
+            aviso_backup = None
+        except Exception as exc:
+            snapshot = None
+            aviso_backup = (
+                "Posição gravada, mas não foi possível verificar o backup SQLite: "
+                + str(exc)
+            )
         return {"moeda": ativo, "quantidade": str(qtd), "custodia": local,
-                "custo_total_usdt": str(custo) if custo is not None else None}
+                "custo_total_usdt": str(custo) if custo is not None else None,
+                "backup_sqlite": snapshot["manifesto"] if snapshot else None,
+                "aviso_backup_sqlite": aviso_backup}
 
     def listar_preciso(self) -> list[dict]:
         """Mantém valores decimais como texto original para análise histórica."""
