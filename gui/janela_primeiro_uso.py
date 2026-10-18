@@ -134,6 +134,62 @@ class JanelaPrimeiroUso(ctk.CTkScrollableFrame):
             novo, text="Começar com carteira vazia",
             fg_color=BG_INPUT, command=self._on_begin_empty,
         ).pack(anchor="w", padx=12, pady=12)
+        mov = self._box("4 · TRANSFERÊNCIAS E VENDAS DE CUSTÓDIA EXTERNA")
+        ctk.CTkLabel(
+            mov, text=(
+                "Somente saldos externos já declarados. Transferir não é comprar. "
+                "Venda credita USDT no destino informado; taxas em USDT ou no ativo "
+                "são explícitas. Não movimenta nem reescreve o CSV."
+            ), text_color=TEXT_SECONDARY, wraplength=870, justify="left",
+        ).pack(anchor="w", padx=12, pady=(0, 9))
+        campos = ctk.CTkFrame(mov, fg_color="transparent")
+        campos.pack(fill="x", padx=12)
+        self._tipo_movimento = ctk.CTkOptionMenu(
+            campos, values=["transferencia", "venda"],
+            width=185, fg_color=BG_INPUT, button_color=BTC_ORANGE,
+        )
+        self._tipo_movimento.grid(row=1, column=0, padx=5, pady=(0, 9))
+        ctk.CTkLabel(
+            campos, text="Operação", text_color=TEXT_SECONDARY,
+        ).grid(row=0, column=0, sticky="w", padx=5)
+        definicoes = [
+            ("Ativo movimentado", "BTC"),
+            ("Origem (custódia)", "Cold wallet"),
+            ("Destino (custódia/USDT)", "Corretora X"),
+            ("Quantidade enviada/vendida", "0.025"),
+            ("Taxa cobrada no ativo", "0 (se comprovadamente zero)"),
+            ("Receita bruta em USDT", "0 para transferência"),
+            ("Corretagem em USDT", "0 se documentadamente zero"),
+            ("Data do movimento", "AAAA-MM-DD"),
+            ("Justificativa/comprovante", "Extrato ou TXID de referência"),
+        ]
+        self._mov_campos = {}
+        for index, (label, placeholder) in enumerate(definicoes):
+            pos=index+1
+            row=pos//3*2
+            col=pos%3
+            ctk.CTkLabel(
+                campos, text=label, text_color=TEXT_SECONDARY,
+            ).grid(row=row, column=col, sticky="w", padx=5)
+            inp=ctk.CTkEntry(
+                campos, width=220, placeholder_text=placeholder,
+                fg_color=BG_INPUT, border_color=BORDER,
+            )
+            inp.grid(row=row+1,column=col,sticky="w",padx=5,pady=(0,8))
+            self._mov_campos[label]=inp
+        self._mov_campos["Data do movimento"].insert(
+            0,datetime.now().strftime("%Y-%m-%d")
+        )
+        ctk.CTkButton(
+            mov, text="Registrar movimentação verificada",
+            command=self._salvar_movimento, fg_color=BTC_ORANGE,
+            text_color=BG_SURFACE,
+        ).pack(anchor="w", padx=14, pady=(6,12))
+        self._movimentos_resumo=ctk.CTkLabel(
+            mov,text="Nenhuma movimentação.",text_color=TEXT_SECONDARY,
+            wraplength=870,justify="left",
+        )
+        self._movimentos_resumo.pack(anchor="w",padx=12,pady=(0,12))
         self.atualizar()
 
     def _box(self, title):
@@ -153,6 +209,12 @@ class JanelaPrimeiroUso(ctk.CTkScrollableFrame):
             diag = self._db._store.diagnostico_integridade()
             iniciais = self._db.carregar_posicoes_iniciais()
             externos = self._db.carregar_posicoes_externas()
+            movimentos = self._db.carregar_movimentos_custodia()
+            self._movimentos_resumo.configure(text=(
+                f"{len(movimentos)} movimentações externas registradas. "
+                "Todas preservadas no SQLite; transferências e vendas "
+                "não se tornam compras do CSV."
+            ))
             self._estado.configure(text=(
                 f"SQLite: {diag['operacoes_atuais']} operações; "
                 f"{len(iniciais)} saldos iniciais; "
@@ -268,6 +330,38 @@ class JanelaPrimeiroUso(ctk.CTkScrollableFrame):
             self._on_change()
         except Exception as exc:
             messagebox.showerror("Saldo não registrado", str(exc))
+
+    def _salvar_movimento(self):
+        vals={k:e.get().strip() for k,e in self._mov_campos.items()}
+        tipo=self._tipo_movimento.get()
+        if not messagebox.askyesno(
+            "Movimentação externa documentada",
+            f"Registrar {tipo} de {vals['Quantidade enviada/vendida']} "
+            f"{vals['Ativo movimentado']} em "
+            f"{vals['Origem (custódia)']}?\\n"
+            "Origem e destino serão conferidos pelo saldo externo. "
+            "O CSV original ficará intacto.",
+        ):
+            return
+        try:
+            r=self._db.registrar_movimento_custodia(
+                tipo=tipo, moeda=vals["Ativo movimentado"],
+                origem=vals["Origem (custódia)"],
+                destino=vals["Destino (custódia/USDT)"],
+                quantidade=vals["Quantidade enviada/vendida"],
+                data_utc=vals["Data do movimento"],
+                taxa_ativo=vals["Taxa cobrada no ativo"],
+                receita_usdt=vals["Receita bruta em USDT"] if tipo=="venda" else "0",
+                taxa_usdt=vals["Corretagem em USDT"] if tipo=="venda" else "0",
+                observacao=vals["Justificativa/comprovante"],
+            )
+            if r.get("aviso_backup_sqlite"):
+                messagebox.showwarning("Movimentação registrada",
+                                       r["aviso_backup_sqlite"])
+            self.atualizar()
+            self._on_change()
+        except Exception as exc:
+            messagebox.showerror("Movimentação recusada",str(exc))
 
     def _corrigir_saldo(self):
         vals = {k: e.get().strip() for k,e in self._campos.items()}
