@@ -65,7 +65,7 @@ class BackupSqliteTests(unittest.TestCase):
     def test_banco_inexistente_ou_corrompido_bloqueia_backup(self):
         with self.assertRaisesRegex(ErroBackupSQLite, "inexistente"):
             criar_backup_sqlite(self.base / "nao-existe.sqlite3", self.destino)
-        with sqlite3.connect(self.banco) as con:
+        with closing(sqlite3.connect(self.banco)) as con:
             con.execute("PRAGMA wal_checkpoint(TRUNCATE)")
         self.banco.write_bytes(b"CORROMPIDO")
         with self.assertRaises(ErroBackupSQLite):
