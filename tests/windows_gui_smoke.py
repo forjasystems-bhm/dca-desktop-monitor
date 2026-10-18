@@ -385,7 +385,12 @@ def main():
             print("P_L_REALIZADO_TOTAL=280 USDT")
             print("COMPRA_HISTORICA_TOTAL=1750 USDT")
         finally:
-            root.destroy()
+            # OPS-01 also tests WM_DELETE_WINDOW; double-destroy is unnecessary.
+            try:
+                if root.winfo_exists():
+                    root.destroy()
+            except Exception:
+                pass
 
 
 if __name__ == "__main__":
