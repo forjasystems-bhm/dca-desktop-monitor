@@ -72,6 +72,18 @@ class DataManager:
     def registrar_posicao_inicial(self, **campos) -> dict:
         return self._store.registrar_posicao_inicial(**campos)
 
+    def carregar_posicoes_externas(self) -> List[Dict]:
+        return self._store.listar_posicoes_externas()
+
+    def registrar_posicao_externa(self, **campos) -> dict:
+        return self._store.registrar_posicao_externa(**campos)
+
+    def corrigir_posicao(self, **campos) -> dict:
+        return self._store.corrigir_posicao(**campos)
+
+    def carregar_auditoria_posicoes(self) -> List[Dict]:
+        return self._store.listar_auditoria_posicoes()
+
     def _executar_mutacao(self, descricao: str, operacao):
         from backend.operation_integrity import ErroIntegridadeFinanceira
         from backend.storage_sqlite import ErroArmazenamento
@@ -258,13 +270,18 @@ class AnalysisEngine:
 
     @staticmethod
     def calcular_portfolio(operacoes: List[Dict], precos_atuais: Dict[str, float],
-                          saldos_iniciais: List[Dict] | None = None) -> Dict:
+                          saldos_iniciais: List[Dict] | None = None,
+                          saldos_externos: List[Dict] | None = None) -> Dict:
         saldos_iniciais = saldos_iniciais or []
-        if not operacoes and not saldos_iniciais:
+        saldos_externos = saldos_externos or []
+        if not operacoes and not saldos_iniciais and not saldos_externos:
             return {}
         saldo_caixa = AnalysisEngine.calcular_saldo_usdt(
             operacoes, saldos_iniciais=saldos_iniciais,
-        )["saldo_atual"]
+        )["saldo_atual"] + float(sum((
+            Decimal(str(r["Quantidade"])) for r in saldos_externos
+            if str(r["Moeda"]).upper() == "USDT"
+        ), Decimal("0")))
         por_moeda = defaultdict(list)
         abertura = defaultdict(lambda: {"quantidade": Decimal("0"), "custo": Decimal("0"),
                                        "incompleto": False})
@@ -287,6 +304,9 @@ class AnalysisEngine:
         saldo_usdc = stable["saldos"]["USDC"] + sum((
             Decimal(str(x["Quantidade"])) for x in saldos_iniciais
             if str(x["Moeda"]).upper() == "USDC"
+        ), Decimal("0")) + sum((
+            Decimal(str(x["Quantidade"])) for x in saldos_externos
+            if str(x["Moeda"]).upper() == "USDC"
         ), Decimal("0"))
         resultado = {}
         totais = {
@@ -302,7 +322,9 @@ class AnalysisEngine:
             "caixa_usdc": float(saldo_usdc),
             "base_de_custo_incompleta": saldo_usdc > 0 or any(
                 v["incompleto"] for v in abertura.values()
-            ),
+            ) or any(x.get("Custo_Total_USDT") is None
+                     for x in saldos_externos if x["Moeda"] not in ("USDT","USDC")),
+            "saldos_externos_declarados": len(saldos_externos),
         }
         for moeda in sorted(set(por_moeda) | set(abertura)):
             ops = por_moeda.get(moeda, [])
@@ -326,6 +348,58 @@ class AnalysisEngine:
                 totais["valor_atual"] += analise["valor_atual_posicao"]
                 if analise["lucro_nao_realizado"] is not None:
                     totais["nao_realizado"] += analise["lucro_nao_realizado"]
+        # Reconcile additional custody AFTER legacy trades. Do not alter
+        # realized historical P/L or invent a buy or a USDT funding entry.
+        externals = defaultdict(lambda: {"q": Decimal("0"), "cost": Decimal("0"), "unknown": False})
+        for lot in saldos_externos:
+            coin = str(lot["Moeda"]).upper()
+            if coin in ("USDT","USDC"):
+                continue
+            t = externals[coin]
+            t["q"] += Decimal(str(lot["Quantidade"]))
+            cost = lot.get("Custo_Total_USDT")
+            if cost is None or str(cost).strip() == "":
+                t["unknown"] = True
+            else:
+                t["cost"] += Decimal(str(cost))
+        for coin, ext in externals.items():
+            old = resultado.get(coin)
+            if old is None:
+                old = AnalysisEngine._analisar_moeda([], AnalysisEngine._preco_disponivel(precos_atuais.get(coin)))
+                resultado[coin] = old
+            qty = Decimal(str(old["quantidade_final"])) + ext["q"]
+            base = old.get("custo_posicao_final")
+            unknown = ext["unknown"] or base is None
+            cost = None if unknown else Decimal(str(base)) + ext["cost"]
+            spot = AnalysisEngine._preco_disponivel(precos_atuais.get(coin))
+            old.update({
+                "quantidade_final": float(qty),
+                "custodia_externa_declarada": float(ext["q"]),
+                "base_de_custo_incompleta": bool(unknown),
+                "custo_posicao_final": None if unknown else float(cost),
+                "pmc_final": None if unknown else float(cost / qty),
+                "preco_de_mercado": spot, "cotacao_disponivel": spot is not None,
+                "valor_atual_posicao": None if spot is None else float(qty) * spot,
+            })
+            old["lucro_nao_realizado"] = (
+                None if spot is None or unknown
+                else old["valor_atual_posicao"] - float(cost)
+            )
+            old["lucro_total"] = (
+                None if old["lucro_nao_realizado"] is None
+                or old["lucro_realizado"] is None
+                else old["lucro_nao_realizado"] + old["lucro_realizado"]
+            )
+            if not unknown:
+                totais["investido_liquido"] += float(ext["cost"])
+                if spot is not None:
+                    totais["nao_realizado"] += float(ext["q"]) * spot - float(ext["cost"])
+            if spot is None:
+                if coin not in totais["cotacoes_pendentes"]:
+                    totais["cotacoes_pendentes"].append(coin)
+            else:
+                totais["valor_atual"] += float(ext["q"]) * spot
+
         if saldo_usdc > 0:
             preco_usdc = AnalysisEngine._preco_disponivel(precos_atuais.get("USDC"))
             valor_usdc = float(saldo_usdc * Decimal(str(preco_usdc))) if preco_usdc is not None else None
@@ -434,15 +508,17 @@ class AnalysisEngine:
     def calcular_distribuicao_portfolio(
         operacoes: List[Dict], precos_atuais: Dict[str, float],
         saldos_iniciais: List[Dict] | None = None,
+        saldos_externos: List[Dict] | None = None,
     ) -> Dict:
         """Uma participação percentual só existe se TODAS as posições estão cotadas."""
-        if not operacoes and not saldos_iniciais:
+        if not operacoes and not saldos_iniciais and not saldos_externos:
             return {
                 "distribuicao": {}, "total_valor_portfolio": 0.0,
                 "avaliacao_completa": True, "cotacoes_pendentes": [],
             }
         carteira = AnalysisEngine.calcular_portfolio(
             operacoes, precos_atuais, saldos_iniciais=saldos_iniciais,
+            saldos_externos=saldos_externos,
         )
         totais = carteira["totais"]
         if not totais["avaliacao_completa"]:
