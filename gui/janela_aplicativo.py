@@ -8,7 +8,7 @@ import customtkinter as ctk
 
 from backend.app_lifecycle import (
     APP_VERSION, carregar_preferencias, salvar_preferencias,
-    verificar_release_estavel,
+    verificar_release_estavel, baixar_atualizacao_verificada,
 )
 from backend.backup_sqlite import (
     verificar_manifesto_sqlite, preparar_restauracao_sqlite,
@@ -32,6 +32,7 @@ class JanelaAplicativo(ctk.CTkToplevel):
         self._on_restore=ao_restaurar
         self._on_pref=ao_alterar_preferencia
         self._manifesto_escolhido=None
+        self._atualizacao_encontrada=None
         self._pref=carregar_preferencias(self._db._store.diretorio)
         self.configure(fg_color=BG_SURFACE)
         wrap=ctk.CTkScrollableFrame(
@@ -45,7 +46,7 @@ class JanelaAplicativo(ctk.CTkToplevel):
 
         updates=self._box(wrap,"Atualizações voluntárias")
         ctk.CTkLabel(
-            updates,text=f"Versão instalada: {APP_VERSION} (desenvolvimento)",
+            updates,text=f"Versão instalada: {APP_VERSION}",
             text_color=TEXT_PRIMARY,
         ).pack(anchor="w",padx=12,pady=4)
         self.status_atualizacao=self._texto(
@@ -58,8 +59,9 @@ class JanelaAplicativo(ctk.CTkToplevel):
             command=self._verificar_atualizacoes,
         ).pack(anchor="w",padx=12,pady=(7,4))
         self._btn_instalar=ctk.CTkButton(
-            updates,text="Atualizar agora — indisponível nesta versão",
+            updates,text="Baixar atualização",
             state="disabled",fg_color=BG_INPUT,
+            command=self._baixar_atualizacao,
         )
         self._btn_instalar.pack(anchor="w",padx=12,pady=(4,12))
 
@@ -151,16 +153,67 @@ class JanelaAplicativo(ctk.CTkToplevel):
         return lbl
 
     def _verificar_atualizacoes(self):
-        self.status_atualizacao.configure(text="Verificando canal oficial de releases...")
+        self._atualizacao_encontrada = None
+        self._btn_instalar.configure(state="disabled")
+        self.status_atualizacao.configure(text="Verificando releases oficiais...")
         def tarefa():
-            result=verificar_release_estavel()
-            try:
-                self._tasks.post(lambda: self.status_atualizacao.configure(
-                    text=result["mensagem"]+" Nenhum pacote é instalado nesta etapa.",
-                ) if self.winfo_exists() else None)
-            except Exception:
-                pass
+            result = verificar_release_estavel()
+            def complete():
+                if not self.winfo_exists():
+                    return
+                self._atualizacao_encontrada = (
+                    result if result.get("download_disponivel") else None
+                )
+                self._btn_instalar.configure(
+                    state="normal" if self._atualizacao_encontrada else "disabled")
+                self.status_atualizacao.configure(text=result["mensagem"])
+            self._tasks.post(complete)
         self._tasks.run(tarefa)
+
+    def _baixar_atualizacao(self):
+        info = self._atualizacao_encontrada
+        if info is None:
+            return
+        pacote = info["pacote"]
+        if not messagebox.askyesno(
+            "Baixar atualização verificada",
+            f"Baixar {pacote['nome']} do GitHub oficial?\n\n"
+            "Após verificar SHA-256, você decidirá quando instalar. "
+            "O aplicativo e seu banco de dados não serão substituídos agora.",
+            parent=self,
+        ):
+            return
+        target = filedialog.asksaveasfilename(
+            parent=self, title="Salvar atualização verificada",
+            initialfile=pacote["nome"],
+            defaultextension=".zip" if sys.platform=="win32" else ".gz",
+            filetypes=[("Atualização do DCA", "*.zip *.gz"), ("Todos", "*.*")],
+        )
+        if not target:
+            return
+        self._btn_instalar.configure(state="disabled")
+        self.status_atualizacao.configure(text="Baixando e verificando SHA-256...")
+        def task():
+            try:
+                result = baixar_atualizacao_verificada(info, Path(target))
+                error = None
+            except Exception as exc:
+                result, error = None, str(exc)
+            def completed():
+                if not self.winfo_exists():
+                    return
+                self._btn_instalar.configure(state="normal")
+                if error:
+                    self.status_atualizacao.configure(
+                        text="Download não concluído: " + error)
+                else:
+                    self.status_atualizacao.configure(
+                        text="Download e SHA-256 verificados em "
+                        + result["arquivo"] +
+                        ". Feche o programa e faça backup antes da instalação "
+                        "manual. A versão atual e seu SQLite continuam intactos.")
+            self._tasks.post(completed)
+        self._tasks.run(task)
 
     def _criar_atalho(self):
         if not messagebox.askyesno(
