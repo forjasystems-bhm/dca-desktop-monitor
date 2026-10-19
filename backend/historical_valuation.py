@@ -140,7 +140,8 @@ def _calcular_historico(
 
     # Aggregate includes actual custody disposals only when their opening cost
     # is known. Keep the imported-CSV realized amount separately auditable.
-    lucro_csv = analise["totais"]["realizado_csv_historico"]
+    lucro_csv = (None if analise.get('pendencias_conciliacao')
+                 else analise["totais"]["realizado_csv_historico"])
     lucro_externo = analise["lucro_custodia_usdt"]
     lucro_realizado = (
         lucro_csv + lucro_externo if lucro_externo is not None and lucro_csv is not None else None

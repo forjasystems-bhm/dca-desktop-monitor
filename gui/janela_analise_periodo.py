@@ -571,25 +571,36 @@ class JanelaAnalisePeriodo(ctk.CTkFrame):
         )
         if registro is None:
             return
+
+        def aprox(texto, estimado):
+            return f"≈ {texto}" if estimado and texto != "Não apurado" else texto
+
+        est_registro = (
+            bool(self._analise.get("pendencias_conciliacao"))
+            if selecionado == "Todos os ativos"
+            else todos.get(selecionado, {}).get("estimado", False)
+        )
         for key, lbl in self._indicadores.items():
             valor = registro.get(key)
+            est = est_registro and key in ("realizado_periodo", "realizado_historico", "custo_aberto")
             lbl.configure(
-                text=f"{self._valor(valor)} {unidade}",
+                text=f"{aprox(self._valor(valor), est)} {unidade}",
                 text_color=self._positivo(valor) if key.startswith("realizado_") else CYAN,
             )
         for item in self._arvore.get_children():
             self._arvore.delete(item)
         for nome, s_usdt in exibidos.items():
             s = modelo["ativos"].get(nome, {})
+            est = s_usdt.get("estimado", False)
             valores = [
                 nome, self._valor(s.get("compras_historicas")),
                 self._valor(s.get("compras_periodo")),
                 self._valor(s.get("vendas_periodo")),
-                self._valor(s.get("realizado_periodo")),
-                self._valor(s.get("realizado_historico")),
-                (self._valor(s.get("custo_aberto")) if brl else
-                 ("Não apurado" if nome in self._analise["ativos_sem_custo"]
-                  else self._valor(s_usdt["custo_aberto"]))),
+                aprox(self._valor(s.get("realizado_periodo")), est),
+                aprox(self._valor(s.get("realizado_historico")), est),
+                aprox((self._valor(s.get("custo_aberto")) if brl else
+                       ("Não apurado" if nome in self._analise["ativos_sem_custo"]
+                        else self._valor(s_usdt["custo_aberto"]))), est),
                 self._valor(s_usdt["quantidade"], 8),
             ]
             self._arvore.insert(
@@ -629,8 +640,11 @@ class JanelaAnalisePeriodo(ctk.CTkFrame):
         if brl and modelo.get("avisos"):
             msg += " Pendências BRL: " + "; ".join(modelo["avisos"][:5])
         if self._analise.get('pendencias_conciliacao'):
-            msg += (' Operações não conciliadas: resultados dos ativos afetados e '
-                    'total consolidado não apuráveis. Consulte Conferir lançamentos no Dashboard.')
+            msg += (' Valores com ≈ são aproximados: há lançamentos antigos com pequena '
+                    'diferença entre valor e quantidade × preço (taxa ou arredondamento).')
+            if any(not p.get('estimavel') for p in self._analise['pendencias_conciliacao']):
+                msg += (' Ativos com diferença grande seguem não apurados.')
+            msg += ' Consulte Conferir lançamentos no Dashboard.'
         if self._analise.get("ativos_sem_custo"):
             msg += (
                 " Custo inicial desconhecido: "

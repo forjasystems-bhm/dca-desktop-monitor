@@ -229,7 +229,13 @@ def calcular_analise_por_periodo(
     pendencias=diagnosticar_operacoes([
         op for op in operacoes if data_fim is None or
         date.fromisoformat(str(op['Data'])[:10]) <= data_fim])
-    for coin in {p['moeda'] for p in pendencias}:
+    from backend.ledger_diagnostics import moedas_estimaveis
+    estimaveis, bloqueadas = moedas_estimaveis(pendencias)
+    for coin in estimaveis:
+        if coin in ativos:
+            ativos[coin]['conciliado']=False
+            ativos[coin]['estimado']=True
+    for coin in bloqueadas:
         if coin in ativos:
             bases_desconhecidas.add(coin)
             ativos[coin]['conciliado']=False

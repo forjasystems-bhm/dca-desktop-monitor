@@ -60,6 +60,7 @@ class JanelaDistribuicao(ctk.CTkFrame):
 
         self._usdt_pl_brl     = {}
         self._taxa_brl_valida = None
+        self._ultimo_resultado = None
         self.display_currency = "USD"
         self.brl_toggle_var   = tk.BooleanVar(value=False)
 
@@ -220,12 +221,13 @@ class JanelaDistribuicao(ctk.CTkFrame):
         detalhe_outer, detalhe_inner = _secao(right, " Análise Detalhada de P&L ")
         detalhe_outer.grid(row=1, column=0, sticky="nsew")
 
-        ctk.CTkLabel(
+        self._lbl_legenda = ctk.CTkLabel(
             detalhe_inner,
-            text="Arraste a barra inferior para ver todas as colunas  →",
+            text=self._TXT_ROLAGEM,
             font=ctk.CTkFont("Segoe UI", 11),
             text_color=TEXT_SECONDARY,
-        ).pack(anchor="w", padx=5, pady=(0, 3))
+        )
+        self._lbl_legenda.pack(anchor="w", padx=5, pady=(0, 3))
 
         # A tabela integra dois scrolls independentes: horizontal para
         # colunas e vertical para posições. A apresentação original é mantida.
@@ -343,6 +345,15 @@ class JanelaDistribuicao(ctk.CTkFrame):
     def _fmt_prc_historico(val):
         return "Indisponível" if val is None else f"{val:,.4f} USDT"
 
+    _TXT_ROLAGEM = "Arraste a barra inferior para ver todas as colunas  →"
+    _TXT_APROX = "   ·   ≈ valor aproximado (taxa/arredondamento em lançamentos antigos)"
+
+    @staticmethod
+    def _aprox(texto, estimado):
+        if not estimado or texto in ("Indisponível", "Não apurado", "—"):
+            return texto
+        return f"≈ {texto}"
+
     def _fmt_prc(self, val):
         if val is None:
             return "Indisponível"
@@ -362,10 +373,17 @@ class JanelaDistribuicao(ctk.CTkFrame):
 
     def _on_currency_change(self, currency: str):
         self.display_currency = currency
-        self.atualizar()
+        if self._ultimo_resultado is not None:
+            pm = self._price_manager
+            taxa = (pm.taxa_brl_para_avaliacao()
+                    if hasattr(pm, "taxa_brl_para_avaliacao") else pm.preco_brl)
+            portfolio, usdt_pl, dist, _, auditoria = self._ultimo_resultado
+            self._atualizar_ui(portfolio, usdt_pl, dist, taxa, auditoria)
+        else:
+            self.atualizar()
 
     def atualizar(self):
-        self.set_status("🔄 Calculando P&L...", CYAN)
+        self._badge.set_status("🔄 Calculando P&L...", CYAN)
         self._tasks.run(self._worker_atualizar)
 
     def _worker_atualizar(self):
@@ -409,11 +427,12 @@ class JanelaDistribuicao(ctk.CTkFrame):
             self._tasks.post(lambda error=str(e): messagebox.showerror("Exceção do Engine", error))
 
     def _ui_vazia(self):
+        self._ultimo_resultado = None
         self._limpar_det_rows()
         self.set_status("", TEXT_SECONDARY)
         self._resetar_cards()
         self._inserir_detalhe_vazio()
-        self.donut_chart.limpar()
+        self.donut_chart.limpar("Nenhuma operação registrada.")
 
     def _limpar_det_rows(self):
         for r in self._det_rows:
@@ -437,6 +456,7 @@ class JanelaDistribuicao(ctk.CTkFrame):
         if self._det_rows and getattr(self._det_rows[0], '_eh_vazio', False):
             self._limpar_det_rows()
 
+        self._ultimo_resultado = (portfolio, usdt_pl, dist, taxa_brl, auditoria)
         self._usdt_pl_brl = usdt_pl
         self._taxa_brl_valida = taxa_brl if taxa_brl and taxa_brl > 0 else None
         resumo = portfolio.get("totais", {})
@@ -493,7 +513,9 @@ class JanelaDistribuicao(ctk.CTkFrame):
                 text="Indisponível (sem cotação)" if faltantes else "--",
                 text_color=NEON_RED if faltantes else TEXT_SECONDARY,
             )
-            self.donut_chart.limpar()
+            self.donut_chart.limpar(
+                "Aguardando cotações da Binance…" if faltantes else ""
+            )
 
         moedas_dados = {m: d for m, d in portfolio.items() if m != "totais"}
         ord_port = sorted(
@@ -528,30 +550,30 @@ class JanelaDistribuicao(ctk.CTkFrame):
         cor_r = TEXT_MUTED if tot_pl_r is None else NEON_GREEN if tot_pl_r >= 0 else NEON_RED
         cor_retorno = TEXT_MUTED if pct_total is None else NEON_GREEN if pct_total >= 0 else NEON_RED
 
+        est = resumo.get("estimado", False)
         self._lbl_patrimonio.configure(text=self._fmt_val(tot_val))
         self._lbl_custo.configure(
-            text=self._fmt_val_historico(tot_custo) + (
+            text=self._aprox(self._fmt_val_historico(tot_custo), est) + (
                 " (parcial: posições sem custo)" if resumo.get("base_de_custo_incompleta") else ""
             )
         )
         # Compras históricas: sempre USDT, sem câmbio atual aplicado retroativamente.
         self._lbl_compras_hist.configure(text=f"{tot_comprado:,.2f} USDT")
-        self._lbl_pl_nr.configure(text=self._fmt_val_historico(tot_pl_nr), text_color=cor_nr)
-        self._lbl_pl_r.configure(text=self._fmt_val_historico(tot_pl_r), text_color=cor_r)
-        self._lbl_pl.configure(text=self._fmt_val_historico(tot_pl), text_color=cor_pl)
+        self._lbl_pl_nr.configure(text=self._aprox(self._fmt_val_historico(tot_pl_nr), est), text_color=cor_nr)
+        self._lbl_pl_r.configure(text=self._aprox(self._fmt_val_historico(tot_pl_r), est), text_color=cor_r)
+        self._lbl_pl.configure(text=self._aprox(self._fmt_val_historico(tot_pl), est), text_color=cor_pl)
         self._lbl_pct.configure(
-            text=f"{pct_nr:+.2f}%" if pct_nr is not None else "Indisponível",
+            text=self._aprox(f"{pct_nr:+.2f}%", est) if pct_nr is not None else "Indisponível",
             text_color=cor_nr,
         )
         self._lbl_retorno.configure(
-            text=f"{pct_total:+.2f}%" if pct_total is not None else "Não apurado",
+            text=self._aprox(f"{pct_total:+.2f}%", est) if pct_total is not None else "Não apurado",
             text_color=cor_retorno,
         )
-        if not faltantes and auditoria["motivos"]:
-            self.set_status(
-                "Retorno não apurado: " + auditoria["motivos"][0],
-                TEXT_SECONDARY,
-            )
+        tem_aprox = est or any(d.get("estimado") for d in moedas_dados.values())
+        self._lbl_legenda.configure(
+            text=self._TXT_ROLAGEM + (self._TXT_APROX if tem_aprox else "")
+        )
 
         moedas_validas = [(m, d) for m, d in ord_port if m != "USDT (Caixa)" and d.get("lucro_total") is not None]
         if moedas_validas:
@@ -566,7 +588,9 @@ class JanelaDistribuicao(ctk.CTkFrame):
             def _legenda_ativo(item):
                 p = _pct_ativo(item[1])
                 percentual = f"{p:+.1f}%" if p is not None else "—"
-                return f"{item[0]}  {self._fmt_val_historico(item[1]['lucro_total'])}  ({percentual})"
+                valor = self._aprox(self._fmt_val_historico(item[1]['lucro_total']),
+                                    item[1].get("estimado", False))
+                return f"{item[0]}  {valor}  ({percentual})"
             self._lbl_melhor.configure(text=_legenda_ativo(melhor))
             self._lbl_pior.configure(text=_legenda_ativo(pior))
         else:
@@ -632,11 +656,14 @@ class JanelaDistribuicao(ctk.CTkFrame):
             ]
             pos = True
         else:
+            est = dados.get("estimado", False)
             valores = [
-                moeda, f"{qtd:,.8f}", self._fmt_prc_historico(pmc), self._fmt_prc(p_mkt),
-                self._fmt_val_historico(custo), self._fmt_val(v_atual),
-                self._fmt_val_historico(pl_nr), self._fmt_val_historico(pl_r),
-                self._fmt_val_historico(pl_tot), str_pct,
+                moeda, f"{qtd:,.8f}", self._aprox(self._fmt_prc_historico(pmc), est),
+                self._fmt_prc(p_mkt),
+                self._aprox(self._fmt_val_historico(custo), est), self._fmt_val(v_atual),
+                self._aprox(self._fmt_val_historico(pl_nr), est),
+                self._aprox(self._fmt_val_historico(pl_r), est),
+                self._aprox(self._fmt_val_historico(pl_tot), est), self._aprox(str_pct, est),
             ]
             pos = pl_tot is not None and pl_tot >= 0
 

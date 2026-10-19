@@ -26,18 +26,47 @@ class FinalReconciliationTests(unittest.TestCase):
                 trade('BTC','compra','1','100','100'),
                 trade('BTC','venda','1','150','150',day='2026-02-01')]
 
-    def test_pending_uni_does_not_become_proven_usdt_profit_or_hide_btc(self):
+    def test_small_pending_uni_is_estimated_and_does_not_hide_btc(self):
         result=calcular_analise_por_periodo(self.rows())
+        self.assertEqual(result['ativos']['UNI']['realizado_historico'],Decimal('174.30'))
+        self.assertTrue(result['ativos']['UNI']['estimado'])
+        self.assertFalse(result['ativos']['UNI']['conciliado'])
+        self.assertEqual(result['ativos']['BTC']['realizado_historico'],Decimal('50'))
+        self.assertNotIn('estimado',result['ativos']['BTC'])
+        self.assertTrue(result['pendencias_conciliacao'])
+        self.assertTrue(result['pendencias_conciliacao'][0]['estimavel'])
+        current=AnalysisEngine.calcular_portfolio(self.rows(),{'UNI':11,'BTC':150})
+        self.assertAlmostEqual(current['UNI']['lucro_realizado'],174.30)
+        self.assertTrue(current['UNI']['estimado'])
+        self.assertEqual(current['BTC']['lucro_realizado'],50)
+        self.assertNotIn('estimado',current['BTC'])
+        self.assertTrue(current['totais']['estimado'])
+        self.assertTrue(current['totais']['avaliacao_completa'])
+        self.assertIsNotNone(current['totais']['valor_atual'])
+        import csv
+        with TemporaryDirectory() as temp:
+            original=Path(temp)/'synthetic.csv'
+            with original.open('w',newline='',encoding='utf-8') as stream:
+                writer=csv.DictWriter(stream,fieldnames=list(self.rows()[0]))
+                writer.writeheader();writer.writerows(self.rows())
+            dm=DataManager(data_dir=Path(temp)/'data',legacy_csv=original)
+            self.assertIsNone(patrimonio_historico_na_data(dm._store,date(2026,3,1))['lucro_realizado'])
+
+    def test_large_pending_uni_does_not_become_usdt_profit_or_hide_btc(self):
+        rows=self.rows()
+        rows[1]=trade('UNI','compra','173.8','10','1000')
+        result=calcular_analise_por_periodo(rows)
         self.assertIsNone(result['ativos']['UNI']['realizado_historico'])
+        self.assertIsNone(result['ativos']['UNI']['custo_aberto'])
         self.assertEqual(result['ativos']['BTC']['realizado_historico'],Decimal('50'))
         self.assertIsNone(result['totais']['realizado_historico'])
-        self.assertTrue(result['pendencias_conciliacao'])
-        self.assertIsNone(result['ativos']['UNI']['custo_aberto'])
-        current=AnalysisEngine.calcular_portfolio(self.rows(),{'UNI':11,'BTC':150})
+        self.assertFalse(result['pendencias_conciliacao'][0]['estimavel'])
+        current=AnalysisEngine.calcular_portfolio(rows,{'UNI':11,'BTC':150})
         self.assertIsNone(current['UNI']['lucro_realizado'])
         self.assertEqual(current['BTC']['lucro_realizado'],50)
         self.assertIsNone(current['totais']['realizado'])
         self.assertIsNone(current['totais']['valor_atual'])
+        self.assertFalse(current['totais']['estimado'])
 
     def test_future_pending_operation_does_not_invalidate_earlier_cut(self):
         early=calcular_analise_por_periodo(self.rows(),fim='2026-01-01')

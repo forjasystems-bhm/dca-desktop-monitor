@@ -61,6 +61,7 @@ class DonutChart(ctk.CTkFrame):
         self._cor_map:  Dict[str, str]    = {}
         self._pl_map:   Dict[str, float]  = {}
         self._draw_job: Optional[str]     = None
+        self._mensagem: str               = "Aguardando cotações da Binance…"
 
         self.canvas.bind("<Configure>", self._on_resize)
         self.canvas.bind("<Motion>",    self._on_canvas_motion)
@@ -76,12 +77,13 @@ class DonutChart(ctk.CTkFrame):
             self._selected = None
         self._agendar_desenho()
 
-    def limpar(self) -> None:
+    def limpar(self, mensagem: str = "") -> None:
         self._dados       = []
         self._pl_map      = {}
         self._selected    = None
         self._hovered_row = None
-        self.canvas.delete("all")
+        self._mensagem    = mensagem
+        self._agendar_desenho()
 
     def _toggle_selecao(self, moeda: str) -> None:
         self._selected = None if self._selected == moeda else moeda
@@ -233,6 +235,11 @@ class DonutChart(ctk.CTkFrame):
     def _desenhar_dist(self) -> None:
         self.canvas.delete("all")
         if not self._dados:
+            mensagem = getattr(self, "_mensagem", "")
+            w, h = self.canvas.winfo_width(), self.canvas.winfo_height()
+            if mensagem and w >= 50 and h >= 50:
+                self.canvas.create_text(w / 2, h / 2, text=mensagem,
+                                        fill=TEXT_MUTED, font=_F_SMALL)
             return
 
         w, h = self.canvas.winfo_width(), self.canvas.winfo_height()

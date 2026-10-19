@@ -487,9 +487,15 @@ class AnalysisEngine:
                 "lucro_total": 0.0,
                 "preco_de_mercado": 1.0,
             }
-        from backend.ledger_diagnostics import diagnosticar_operacoes
+        from backend.ledger_diagnostics import diagnosticar_operacoes, moedas_estimaveis
         pendencias=diagnosticar_operacoes(operacoes)
-        for coin in {p['moeda'] for p in pendencias}:
+        estimaveis, bloqueadas = moedas_estimaveis(pendencias)
+        for coin in estimaveis:
+            row=resultado.get(coin)
+            if row is not None:
+                row['conciliado']=False
+                row['estimado']=True
+        for coin in bloqueadas:
             row=resultado.get(coin)
             if row is not None:
                 row['conciliado']=False
@@ -497,7 +503,7 @@ class AnalysisEngine:
                 for field in ('lucro_realizado','lucro_nao_realizado','lucro_total',
                               'custo_posicao_final','pmc_final'):
                     row[field]=None
-        if pendencias:
+        if bloqueadas:
             totais['realizado']=None
             totais['realizado_csv']=None
             totais['nao_realizado']=None
@@ -505,6 +511,7 @@ class AnalysisEngine:
             totais['investido_liquido']=None
             totais['avaliacao_completa']=False
             totais['valor_atual']=None
+        totais['estimado']=bool(estimaveis) and not bloqueadas
         totais['pendencias_conciliacao']=pendencias
         resultado["totais"] = totais
         return resultado
