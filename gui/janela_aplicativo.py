@@ -118,6 +118,8 @@ class JanelaAplicativo(ctk.CTkToplevel):
         ).pack(side="left",padx=8)
         ctk.CTkButton(recovery,text="Exportar pacote portátil de recuperação",
             fg_color=BG_INPUT,command=self._exportar_pacote).pack(anchor="w",padx=12,pady=6)
+        ctk.CTkButton(recovery,text="Escolher destino independente de backup",
+            fg_color=BG_INPUT,command=self._escolher_backup_externo).pack(anchor="w",padx=12,pady=6)
         self._btn_restaurar=ctk.CTkButton(
             recovery,text="Fechar aplicativo e ativar recuperação",
             fg_color=BTC_ORANGE,text_color=BG_SURFACE,
@@ -247,6 +249,16 @@ class JanelaAplicativo(ctk.CTkToplevel):
             )
         except Exception as exc:
             messagebox.showerror("Recuperação não preparada",str(exc),parent=self)
+
+    def _escolher_backup_externo(self):
+        target=filedialog.askdirectory(parent=self,title="Destino independente para cópias de segurança")
+        if not target:return
+        try:
+            from backend.backup_policy import configurar_destino_independente,proteger_gravacao
+            configurar_destino_independente(Path(self._db.arquivo_db).parent,target)
+            proteger_gravacao(self._db.arquivo_db)
+            self.status_backup.configure(text="Backup independente verificado em "+target+". Retenção: todas as cópias.",text_color=CYAN)
+        except Exception as exc:messagebox.showerror("Backup independente pendente",str(exc),parent=self)
 
     def _exportar_pacote(self):
         destino=filedialog.asksaveasfilename(parent=self,title="Salvar pacote de recuperação",

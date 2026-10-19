@@ -95,8 +95,12 @@ class DataManager:
         from backend.storage_sqlite import ErroArmazenamento
 
         self.ultimo_erro = None
+        self.ultimo_aviso_backup = None
         try:
             sucesso = operacao()
+            self.ultimo_aviso_backup = getattr(self._store,"ultimo_aviso_backup",None)
+            if self.ultimo_aviso_backup:
+                logger.error(self.ultimo_aviso_backup)
             if not sucesso:
                 self.ultimo_erro = "Operação não encontrada; recarregue o histórico."
             return sucesso

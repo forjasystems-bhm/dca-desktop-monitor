@@ -47,3 +47,35 @@ def backup_antes_atualizacao(banco: Path) -> dict:
     )
     verificar_manifesto_sqlite(Path(result["manifesto"]))
     return result
+
+
+def configurar_destino_independente(diretorio, destino):
+    """Explicit opt-in; retain ALL backups. No destructive pruning policy."""
+    import os,tempfile
+    folder=Path(diretorio).resolve();external=Path(destino).resolve()
+    if external==folder or folder in external.parents:
+        raise ErroBackupSQLite('Escolha um destino fora da pasta de dados operacional.')
+    external.mkdir(parents=True,exist_ok=True)
+    config={'destino_externo':str(external),'retencao':'todos'}
+    fd,temp=tempfile.mkstemp(dir=folder,prefix='.backup-policy-')
+    try:
+        with os.fdopen(fd,'w',encoding='utf-8') as out:
+            json.dump(config,out);out.flush();os.fsync(out.fileno())
+        os.replace(temp,folder/'backup-policy.json')
+    finally:Path(temp).unlink(missing_ok=True)
+    return config
+
+
+def proteger_gravacao(banco):
+    """Separate confirmed SQL commit from backup health; never claim rollback."""
+    from uuid import uuid4
+    db=Path(banco).resolve()
+    snapshot=criar_backup_sqlite(db,db.parent/'backups'/'sqlite',motivo='apos_gravacao')
+    policy=db.parent/'backup-policy.json'
+    if policy.is_file():
+        config=json.loads(policy.read_text(encoding='utf-8'))
+        if config.get('destino_externo'):
+            from backend.recovery_bundle import exportar_pacote
+            target=Path(config['destino_externo'])/('DCA-'+datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S')+'-'+uuid4().hex+'.zip')
+            exportar_pacote(db,target)
+    return snapshot

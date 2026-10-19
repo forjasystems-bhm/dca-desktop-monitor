@@ -1013,6 +1013,14 @@ class ArmazemSQLite:
             return {"consistente": False, "erro": str(exc), "registros": len(historico)}
         return {"consistente": True, "erro": None, "registros": len(historico)}
 
+    def _apos_gravacao(self):
+        self.ultimo_aviso_backup = None
+        try:
+            from backend.backup_policy import proteger_gravacao
+            proteger_gravacao(self.arquivo_db)
+        except Exception as exc:
+            self.ultimo_aviso_backup = "Gravação confirmada; cópia de segurança pendente: " + str(exc)
+
     def inserir(self, valores: list) -> bool:
         if len(valores) not in (len(COLUNAS), len(COLUNAS_EXPORTACAO)):
             raise ErroArmazenamento("Quantidade incorreta de campos.")
@@ -1026,6 +1034,7 @@ class ArmazemSQLite:
             validar_livro(livro + [row], self._saldos_transacionais(con))
             self._inserir(con, row)
             con.execute("COMMIT")
+            self._apos_gravacao()
             return True
         except Exception:
             if con.in_transaction:
@@ -1059,6 +1068,7 @@ class ArmazemSQLite:
                 "preco=?, quantidade=?, taxa_brl=?, taxa_corretagem_usdt=? WHERE id=?",
                 tuple(row[campo] for campo in COLUNAS) + (row.get(CAMPO_FEE), id_operacao,))
             con.execute("COMMIT")
+            self._apos_gravacao()
             return True
         except Exception:
             if con.in_transaction:
@@ -1082,6 +1092,7 @@ class ArmazemSQLite:
             validar_livro(livro, self._saldos_transacionais(con))
             con.execute("DELETE FROM operacoes WHERE id=?", (id_operacao,))
             con.execute("COMMIT")
+            self._apos_gravacao()
             return True
         except Exception:
             if con.in_transaction:
@@ -1151,6 +1162,7 @@ class ArmazemSQLite:
                 )
                 inseridos += 1
             con.execute("COMMIT")
+            self._apos_gravacao()
             return inseridos
         except Exception:
             if con.in_transaction:

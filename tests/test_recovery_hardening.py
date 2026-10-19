@@ -102,3 +102,15 @@ class PortableRecoveryTests(unittest.TestCase):
             with zipfile.ZipFile(archive,'w') as z:z.writestr('../escape','bad')
             with self.assertRaises(RuntimeError):recuperar_pacote(archive,target)
             self.assertFalse(target.exists());self.assertFalse((root/'escape').exists())
+
+class BackupPolicyTests(unittest.TestCase):
+    def test_f13_ordinary_commit_has_verified_post_write_backup(self):
+        with TemporaryDirectory() as temp:
+            root=Path(temp);dm=DataManager(data_dir=root,auto_import_legacy=False)
+            dm.salvar_operacao(['2026-01-01 12:00:00','USDT','compra','100','5','100','5'])
+            manifests=list((root/'backups'/'sqlite').glob('*.json'))
+            self.assertTrue(manifests)
+            import json
+            manifest=json.loads(manifests[-1].read_text())
+            with closing(sqlite3.connect(manifests[-1].parent/manifest['arquivo'])) as conn:
+                self.assertEqual(conn.execute('SELECT COUNT(*) FROM operacoes').fetchone()[0],1)
