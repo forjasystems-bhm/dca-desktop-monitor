@@ -172,6 +172,8 @@ class ArmazemSQLite:
         if self.arquivo_db.is_file() and self.arquivo_db.stat().st_size:
             with closing(sqlite3.connect(self.arquivo_db.as_uri() + "?mode=ro", uri=True)) as verify:
                 version = verify.execute("PRAGMA user_version").fetchone()[0]
+            if version < 6:
+                raise ErroArmazenamento("Schema anterior à base validada v6; requer migração assistida sem inicialização silenciosa.")
             if version > SCHEMA_VERSION:
                 raise ErroArmazenamento("Banco de versão futura incompatível; nenhuma migração executada.")
             if version == SCHEMA_VERSION:
@@ -182,9 +184,9 @@ class ArmazemSQLite:
                 from backend.database_identity import REQUIRED
                 with closing(sqlite3.connect(self.arquivo_db.as_uri()+"?mode=ro",uri=True)) as verify:
                     for table, columns in REQUIRED.items():
-                        if table in ("identidade_carteira", "auditoria_operacoes", "versoes_resultados"):
-                            continue
-                        if version < 7 and table not in ("operacoes", "importacoes_legadas"):
+                        introduced={"identidade_carteira":8,"auditoria_operacoes":9,
+                                    "versoes_resultados":10}.get(table,6)
+                        if version < introduced:
                             continue
                         required = columns - ({"comando_id"} if version < 7 else set())
                         actual={r[1] for r in verify.execute("PRAGMA table_info("+table+")")}

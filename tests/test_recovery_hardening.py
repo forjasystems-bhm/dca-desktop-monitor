@@ -204,3 +204,32 @@ class PortableFilesystemTests(unittest.TestCase):
             with patch('os.link',side_effect=collision):
                 with self.assertRaises(FileExistsError):preparar_restauracao_sqlite(Path(backup['manifesto']),target)
             self.assertEqual(target.read_bytes(),b'OTHER OWNER DATA')
+
+class BaselineSchemaValidationTests(unittest.TestCase):
+    def test_v6_missing_financial_table_is_not_silently_recreated(self):
+        with TemporaryDirectory() as temp:
+            root=Path(temp);dm=DataManager(data_dir=root,auto_import_legacy=False)
+            with closing(sqlite3.connect(dm.arquivo_db)) as conn:
+                conn.execute('DROP TABLE posicoes_externas');conn.execute('PRAGMA user_version=6');conn.commit()
+            with self.assertRaisesRegex(RuntimeError,'Estrutura'):
+                DataManager(data_dir=root,auto_import_legacy=False)
+            with closing(sqlite3.connect(dm.arquivo_db)) as conn:
+                self.assertEqual(conn.execute("SELECT count(*) FROM sqlite_master WHERE name='posicoes_externas'").fetchone()[0],0)
+
+    def test_v9_missing_audit_table_is_not_silently_recreated(self):
+        with TemporaryDirectory() as temp:
+            root=Path(temp);dm=DataManager(data_dir=root,auto_import_legacy=False)
+            with closing(sqlite3.connect(dm.arquivo_db)) as conn:
+                conn.execute('DROP TABLE auditoria_operacoes');conn.execute('PRAGMA user_version=9');conn.commit()
+            with self.assertRaisesRegex(RuntimeError,'Estrutura'):
+                DataManager(data_dir=root,auto_import_legacy=False)
+    def test_schema_before_validated_v6_requires_assisted_migration(self):
+        for version in (0,1,5):
+            with self.subTest(version=version),TemporaryDirectory() as temp:
+                root=Path(temp);dm=DataManager(data_dir=root,auto_import_legacy=False)
+                with closing(sqlite3.connect(dm.arquivo_db)) as conn:
+                    conn.execute('PRAGMA user_version='+str(version));conn.commit()
+                before=dm.arquivo_db.read_bytes()
+                with self.assertRaisesRegex(RuntimeError,'assistida'):
+                    DataManager(data_dir=root,auto_import_legacy=False)
+                self.assertEqual(dm.arquivo_db.read_bytes(),before)
