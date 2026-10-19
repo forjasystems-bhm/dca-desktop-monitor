@@ -1,0 +1,139 @@
+name: DCA production packages and gated release
+
+on:
+  pull_request:
+    paths:
+      - 'backend/**'
+      - 'gui/**'
+      - 'config/**'
+      - 'db/**'
+      - 'main.pyw'
+      - 'img/**'
+      - 'tests/**'
+      - 'requirements.txt'
+      - '.github/workflows/release-packages.yml'
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+jobs:
+  package-windows:
+    runs-on: windows-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install pinned runtime and packager
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt pyinstaller==6.16.0
+      - name: Financial, UI and update regressions
+        run: python -m unittest discover -s tests -v
+      - name: Package Windows application (real, no preview marker)
+        shell: pwsh
+        run: |
+          python -m PyInstaller --noconfirm --clean --onedir --windowed --name DCA-Monitor --icon img/favicon.ico --collect-all customtkinter --collect-all ttkthemes --collect-all pystray --add-data "config/config.json:config" --add-data "img/favicon.ico:img" --add-data "img/favicon.png:img" main.pyw
+          if ($LASTEXITCODE -ne 0) { throw "Build Windows falhou" }
+          if (!(Test-Path "dist/DCA-Monitor/DCA-Monitor.exe")) { throw "Sem executável" }
+          if (Test-Path "dist/DCA-Monitor/DCA-PREVIEW-MODE") { throw "Prévia proibida" }
+      - name: Smoke test frozen executable in clean isolated wallet
+        run: python tests/frozen_release_smoke.py
+      - name: Build and checksum Windows ZIP
+        shell: pwsh
+        run: |
+          python -c "import shutil;shutil.make_archive('DCA-Monitor-v1.0.0-Windows-x64','zip','dist','DCA-Monitor')"
+          $digest=(Get-FileHash 'DCA-Monitor-v1.0.0-Windows-x64.zip' -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$digest  DCA-Monitor-v1.0.0-Windows-x64.zip" | Set-Content 'DCA-Monitor-v1.0.0-Windows-x64.zip.sha256' -Encoding ascii
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DCA-Monitor-Windows-x64
+          path: |
+            DCA-Monitor-v1.0.0-Windows-x64.zip
+            DCA-Monitor-v1.0.0-Windows-x64.zip.sha256
+          retention-days: 14
+          if-no-files-found: error
+
+  package-linux:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Linux GUI runtime and pinned dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb python3-tk libx11-6
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt pyinstaller==6.16.0
+      - name: Financial and update regressions
+        run: python -m unittest discover -s tests -v
+      - name: Package Linux application
+        run: |
+          python -m PyInstaller --noconfirm --clean --onedir --windowed --name DCA-Monitor --collect-all customtkinter --collect-all ttkthemes --collect-all pystray --add-data "config/config.json:config" --add-data "img/favicon.ico:img" --add-data "img/favicon.png:img" main.pyw
+          test -x dist/DCA-Monitor/DCA-Monitor
+          test ! -e dist/DCA-Monitor/DCA-PREVIEW-MODE
+      - name: Smoke test Linux executable with Xvfb and isolated data
+        run: xvfb-run -a python tests/frozen_release_smoke.py
+      - name: Build and checksum Linux archive
+        run: |
+          python -c "import shutil;shutil.make_archive('DCA-Monitor-v1.0.0-Linux-x64','gztar','dist','DCA-Monitor')"
+          sha256sum DCA-Monitor-v1.0.0-Linux-x64.tar.gz > DCA-Monitor-v1.0.0-Linux-x64.tar.gz.sha256
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DCA-Monitor-Linux-x64
+          path: |
+            DCA-Monitor-v1.0.0-Linux-x64.tar.gz
+            DCA-Monitor-v1.0.0-Linux-x64.tar.gz.sha256
+          retention-days: 14
+          if-no-files-found: error
+
+  release:
+    name: Gated GitHub Releases publication
+    needs: [package-windows, package-linux]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    environment: production
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Require canonical main ancestry and administrative SHA approval
+        env:
+          APPROVED_SHA: ${{ vars.DCA_DISTRIBUTION_APPROVED_SHA }}
+        run: |
+          set -euo pipefail
+          git fetch origin main --depth=500
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/main
+          test -n "$APPROVED_SHA"
+          test "$APPROVED_SHA" = "$GITHUB_SHA"
+          test "$GITHUB_REF" = "refs/tags/v1.0.0"
+      - uses: actions/download-artifact@v4
+        with:
+          name: DCA-Monitor-Windows-x64
+          path: dist/windows
+      - uses: actions/download-artifact@v4
+        with:
+          name: DCA-Monitor-Linux-x64
+          path: dist/linux
+      - name: Validate immutable archive digests
+        run: |
+          (cd dist/windows && sha256sum -c *.sha256)
+          (cd dist/linux && sha256sum -c *.sha256)
+      - name: Publish both OS builds only after approvals
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            echo 'Tag release already published; refusing to overwrite'
+            exit 1
+          fi
+          gh release create "$GITHUB_REF_NAME" dist/windows/* dist/linux/* --verify-tag --title "DCA Monitor 1.0.0" --notes "Windows e Linux. Dados persistentes fora da instalação. Atualizações voluntárias com download SHA-256. Relatórios BRL históricos exigem custo, taxas e câmbio documentados."

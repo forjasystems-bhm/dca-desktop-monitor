@@ -166,6 +166,7 @@ def baixar_atualizacao_verificada(info: dict, destino: Path) -> dict:
     if not target.parent.is_dir():
         raise ValueError("Pasta de download inexistente.")
     fd, temporary = tempfile.mkstemp(prefix=".dca-download-", dir=target.parent)
+    owned_final = False
     total = 0
     sha = hashlib.sha256()
     try:
@@ -194,6 +195,7 @@ def baixar_atualizacao_verificada(info: dict, destino: Path) -> dict:
             raise ValueError("Tamanho ou SHA-256 da atualização não confere.")
         # Exclusive final publication avoids overwriting existing user files.
         with target.open("xb") as out, open(temporary, "rb") as source:
+            owned_final = True
             while True:
                 data = source.read(1024 * 1024)
                 if not data:
@@ -204,9 +206,8 @@ def baixar_atualizacao_verificada(info: dict, destino: Path) -> dict:
         return {"arquivo": str(target), "sha256": sha.hexdigest(),
                 "instalado": False}
     except Exception:
-        target.unlink(missing_ok=True) if target.is_file() and (
-            target.stat().st_size != total or sha.hexdigest() != pacote["sha256"]
-        ) else None
+        if owned_final:
+            target.unlink(missing_ok=True)
         raise
     finally:
         Path(temporary).unlink(missing_ok=True)

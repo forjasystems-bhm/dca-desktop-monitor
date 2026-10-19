@@ -36,6 +36,21 @@ def verificar_workflows(root):
         source = path.read_text(encoding='utf-8')
         active = '\n'.join(line for line in source.splitlines()
                            if not line.lstrip().startswith('#'))
+        production = path.name == "release-packages.yml"
+        if production:
+            controls = (
+                "refs/tags/v",
+                "DCA_DISTRIBUTION_APPROVED_SHA",
+                "environment: production",
+                "git merge-base --is-ancestor",
+                "runs-on: windows-latest",
+                "runs-on: ubuntu-latest",
+                "sha256sum -c",
+                "gh release create",
+            )
+            if not all(x in active for x in controls):
+                raise RuntimeError("Distribuição não protegida: " + str(path))
+            continue
         if publishing.search(active):
             raise RuntimeError('Publicação não autorizada: ' + str(path))
         if packaging.search(active):
