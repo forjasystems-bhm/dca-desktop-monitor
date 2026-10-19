@@ -140,7 +140,7 @@ def _calcular_historico(
     lucro_csv = analise["totais"]["realizado_csv_historico"]
     lucro_externo = analise["lucro_custodia_usdt"]
     lucro_realizado = (
-        lucro_csv + lucro_externo if lucro_externo is not None else None
+        lucro_csv + lucro_externo if lucro_externo is not None and lucro_csv is not None else None
     )
     return {
         "data_utc": data_ref.isoformat(),

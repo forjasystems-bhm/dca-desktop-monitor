@@ -48,13 +48,15 @@ _ALINHAMENTOS = ["w", "w", "w", "w", "w", "w", "w", "w", "w", "w"]
 
 class JanelaDistribuicao(ctk.CTkFrame):
 
-    def __init__(self, parent, data_manager, price_manager, analysis_engine, on_change=None):
+    def __init__(self, parent, data_manager, price_manager, analysis_engine, on_change=None,
+                 on_review_operation=None):
         super().__init__(parent, fg_color="transparent")
         self._tasks = UiDispatcher(self)
 
         self._data_manager  = data_manager
         self._price_manager = price_manager
         self._engine        = analysis_engine
+        self._on_review_operation = on_review_operation
 
         self._usdt_pl_brl     = {}
         self._taxa_brl_valida = None
@@ -114,6 +116,16 @@ class JanelaDistribuicao(ctk.CTkFrame):
                 + issue["orientacao"] + "\n\n"
             ))
         campo.configure(state="disabled")
+        if issues and self._on_review_operation is not None:
+            selected=ctk.StringVar(value=str(issues[0]['operacao']))
+            ctk.CTkComboBox(janela,values=[str(p['operacao']) for p in issues],
+                           variable=selected,state='readonly').pack(anchor='w',padx=17,pady=4)
+            def editar():
+                indice=int(selected.get())-1
+                janela.destroy()
+                self._on_review_operation(indice)
+            ctk.CTkButton(janela,text='Consultar / corrigir operação selecionada',
+                          command=editar).pack(anchor='w',padx=17,pady=4)
         ctk.CTkButton(janela, text="Fechar", command=janela.destroy
                       ).pack(anchor="e", padx=17, pady=12)
         janela.lift()

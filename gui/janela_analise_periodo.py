@@ -628,6 +628,9 @@ class JanelaAnalisePeriodo(ctk.CTkFrame):
                 )
         if brl and modelo.get("avisos"):
             msg += " Pendências BRL: " + "; ".join(modelo["avisos"][:5])
+        if self._analise.get('pendencias_conciliacao'):
+            msg += (' Operações não conciliadas: resultados dos ativos afetados e '
+                    'total consolidado não apuráveis. Consulte Conferir lançamentos no Dashboard.')
         if self._analise.get("ativos_sem_custo"):
             msg += (
                 " Custo inicial desconhecido: "

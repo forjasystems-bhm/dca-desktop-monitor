@@ -34,7 +34,7 @@ def _numero(registro: dict, campo: str, linha: int, *, positivo=True) -> Decimal
     return numero
 
 
-def validar_campos(registro: dict, linha: int) -> None:
+def validar_campos(registro: dict, linha: int, *, conferir_relacao=True) -> None:
     """Confere regra específica do CSV: USDT usa Preco como câmbio, não preço unitário."""
     moeda = str(registro.get("Moeda", "")).strip().upper()
     if not moeda or not moeda.isascii() or not moeda.isalnum():
@@ -66,7 +66,7 @@ def validar_campos(registro: dict, linha: int) -> None:
                 "nominal de transferência. Preço é cotação BRL informada, "
                 "não uma conversão USDC/USDT."
             )
-    else:
+    elif conferir_relacao:
         # A UI arredonda a quantidade; tolera apenas 1 centavo ou
         # o efeito máximo de arredondar 8 casas decimais.
         diferenca = abs(quantidade * preco - valor)
@@ -84,7 +84,8 @@ def validar_campos(registro: dict, linha: int) -> None:
             )
 
 
-def validar_livro(operacoes: list[dict], saldos_iniciais: list[dict] | None = None) -> None:
+def validar_livro(operacoes: list[dict], saldos_iniciais: list[dict] | None = None,
+                  *, divergencias_legadas=()) -> None:
     """Valida TODOS os saldos em ordem temporal antes de confirmar a transação.
 
     Rejeita saldo USDT negativo, venda de quantidade não possuída e operações
@@ -92,7 +93,10 @@ def validar_livro(operacoes: list[dict], saldos_iniciais: list[dict] | None = No
     """
     registros = []
     for posicao, op in enumerate(operacoes, 1):
-        validar_campos(op, posicao)
+        # Only the explicit reconciliation path can carry forward an unchanged
+        # legacy gross/price discrepancy. All other fields and temporal balances
+        # remain strict. Ordinary inserts/edits never supply this exception.
+        validar_campos(op, posicao, conferir_relacao=posicao not in divergencias_legadas)
         registros.append((str(op["Data"]), posicao, op))
     registros.sort(key=lambda x: (x[0], x[1]))
 

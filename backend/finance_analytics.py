@@ -225,6 +225,17 @@ def calcular_analise_por_periodo(
         state.setdefault("realizado_csv_periodo", state["realizado_periodo"])
         for field in ("realizado_historico", "realizado_periodo"):
             state[field] = None if result[field] is None else state[field] + result[field]
+    from backend.ledger_diagnostics import diagnosticar_operacoes
+    pendencias=diagnosticar_operacoes([
+        op for op in operacoes if data_fim is None or
+        date.fromisoformat(str(op['Data'])[:10]) <= data_fim])
+    for coin in {p['moeda'] for p in pendencias}:
+        if coin in ativos:
+            bases_desconhecidas.add(coin)
+            ativos[coin]['conciliado']=False
+            for field in ('realizado_historico','realizado_periodo',
+                          'realizado_csv_historico','realizado_csv_periodo'):
+                ativos[coin][field]=None
     campos = campos + ("realizado_csv_historico", "realizado_csv_periodo")
     totais = {campo: ZERO if campo != "operacoes_periodo" else 0 for campo in campos}
     for estado_moeda in ativos.values():
@@ -236,6 +247,7 @@ def calcular_analise_por_periodo(
         "inicio": data_inicio,
         "fim": data_fim,
         "ativos": dict(sorted(ativos.items())),
+        "pendencias_conciliacao": pendencias,
         "totais": totais,
         "aportes_periodo_usdt": aportes,
         "saques_periodo_usdt": saques,

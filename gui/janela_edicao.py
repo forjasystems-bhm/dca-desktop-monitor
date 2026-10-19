@@ -55,6 +55,7 @@ class JanelaEdicao(ctk.CTkFrame):
         self._mapa_indices: dict = {}
         self._op_original: Optional[dict] = None
         self._carregando = False
+        self._conciliando = False
 
         self._build_ui()
         self.after(100, self.atualizar)
@@ -327,6 +328,8 @@ class JanelaEdicao(ctk.CTkFrame):
             logger.error(f"Erro no histórico: {e}")
 
     def _renderizar_tree(self, ops_com_indice: list) -> None:
+        if self._indice_editando is not None:
+            return
         self._carregando = False
         self._mapa_indices.clear()
 
@@ -364,10 +367,15 @@ class JanelaEdicao(ctk.CTkFrame):
             messagebox.showwarning("Aviso", "Selecione uma transação.")
             return
 
+        self.carregar_operacao(self._mapa_indices.get(selecao[0]))
+
+    def carregar_operacao(self, indice, *, conciliacao=False):
+        """Open the exact documented row from the reconciliation dialog."""
         self._limpar_form()
-        item = selecao[0]
-        self._indice_editando = self._mapa_indices.get(item)
-        valores = self._tree.item(item, "values")
+        self._indice_editando = indice
+        self._conciliando = conciliacao
+        self.btn_save.configure(state='normal')
+        self.btn_load.configure(state='normal')
 
         self._op_original = self._data_manager.carregar_operacao_para_edicao(self._indice_editando)
 
@@ -436,7 +444,14 @@ class JanelaEdicao(ctk.CTkFrame):
 
             motivo=simpledialog.askstring("Motivo da alteração","Descreva o motivo documentado (8 a 500 caracteres):",parent=self)
             if motivo is None:return
-            if self._data_manager.atualizar_operacao(self._indice_editando, nova_op,motivo=motivo):
+            if self._conciliando and not messagebox.askyesno(
+                'Confirmar conciliação',
+                'Confirmar os valores conferidos com o comprovante? O registro anterior e '
+                'o motivo serão preservados. Outras pendências não serão aprovadas.',parent=self):
+                return
+            save=(self._data_manager.conciliar_operacao if self._conciliando
+                  else self._data_manager.atualizar_operacao)
+            if save(self._indice_editando, nova_op,motivo=motivo):
                 messagebox.showinfo("Sucesso", "Transação atualizada com sucesso!")
                 self._avisar_backup()
                 self._indice_editando = None
@@ -479,6 +494,7 @@ class JanelaEdicao(ctk.CTkFrame):
                 )
 
     def _limpar_form(self) -> None:
+        self._conciliando = False
         self._campo_corretagem.delete(0, "end")
         for col, widget in self._campos.items():
             if isinstance(widget, ctk.CTkComboBox):

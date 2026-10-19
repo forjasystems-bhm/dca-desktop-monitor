@@ -57,6 +57,10 @@ class DataManager:
     def carregar_operacao_para_edicao(self, indice):
         return self._store.listar_preciso()[indice]
 
+    def conciliar_operacao(self, indice, nova_operacao, *, motivo):
+        return self._executar_mutacao('conciliar', lambda: self._store.substituir(
+            indice,nova_operacao,motivo=motivo,conciliacao=True))
+
     def importar_csv_legado(self, caminho: str) -> int:
         return self._store.importar_csv(Path(caminho))
 
@@ -483,6 +487,22 @@ class AnalysisEngine:
                 "lucro_total": 0.0,
                 "preco_de_mercado": 1.0,
             }
+        from backend.ledger_diagnostics import diagnosticar_operacoes
+        pendencias=diagnosticar_operacoes(operacoes)
+        for coin in {p['moeda'] for p in pendencias}:
+            row=resultado.get(coin)
+            if row is not None:
+                row['conciliado']=False
+                row['base_de_custo_incompleta']=True
+                for field in ('lucro_realizado','lucro_nao_realizado','lucro_total',
+                              'custo_posicao_final','pmc_final'):
+                    row[field]=None
+        if pendencias:
+            totais['realizado']=None
+            totais['realizado_csv']=None
+            totais['nao_realizado']=None
+            totais['base_de_custo_incompleta']=True
+        totais['pendencias_conciliacao']=pendencias
         resultado["totais"] = totais
         return resultado
 

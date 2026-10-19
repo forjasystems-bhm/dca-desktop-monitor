@@ -380,6 +380,31 @@ def main():
             assert dm.atualizar_operacao(0,original,motivo='Reverter apenas o cenário sintético')
             pump(root)
             print('GUI_F15_F17_EDICAO_PRECISA_E_AUDITADA=PASS')
+            # Exercise the actual reconciliation editor against synthetic UNI
+            # history, independently from the normal dashboard fixture.
+            from gui.janela_edicao import JanelaEdicao
+            review_csv=Path(pasta)/'synthetic-review.csv'
+            review_csv.write_text(
+                'Data,Moeda,Operacao,Valor_USDT,Preco,Quantidade,Taxa_BRL,Taxa_Corretagem_USDT\n'
+                '2026-01-01 12:00:00,USDT,compra,10000,5,10000,5,\n'
+                '2026-01-02 12:00:00,UNI,compra,1737.50,10,173.8,5,0\n'
+                '2026-01-03 12:00:00,ETH,compra,9.5,10,1,5,0\n',encoding='utf-8')
+            review_original=review_csv.read_bytes()
+            review_dm=DataManager(legacy_csv=review_csv,data_dir=Path(pasta)/'review-wallet')
+            review_window=ctk.CTkToplevel(root)
+            review_editor=JanelaEdicao(review_window,review_dm,FakePriceManager(),app.analysis_engine)
+            review_editor.pack(fill='both',expand=True)
+            pump(root)
+            review_editor.carregar_operacao(1,conciliacao=True)
+            review_editor._campos['Valor_USDT'].delete(0,'end')
+            review_editor._campos['Valor_USDT'].insert(0,'1738.00')
+            with patch('gui.janela_edicao.simpledialog.askstring',return_value='Conferência sintética com comprovante'), patch('gui.janela_edicao.messagebox.askyesno',return_value=True), patch('gui.janela_edicao.messagebox.showinfo'):
+                review_editor._salvar_edicao()
+            assert review_dm.carregar_operacoes_precisas()[1]['Valor_USDT']=='1738.00'
+            assert review_dm._store.listar_auditoria_operacoes()[-1]['antes']['Valor_USDT']=='1737.50'
+            assert review_csv.read_bytes()==review_original
+            review_window.destroy()
+            print('GUI_RELEASE_CONCILIACAO_UNI_AUDITADA=PASS')
             # F06/F07: a closed asset with unknown realized basis must render.
             dash._inserir_detalhe('BTC',dict(quantidade_final=0,pmc_final=0,
                 custo_posicao_final=0,preco_de_mercado=100,valor_atual_posicao=0,

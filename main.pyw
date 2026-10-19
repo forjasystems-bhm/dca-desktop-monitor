@@ -267,6 +267,7 @@ class PortfolioDCA:
         self.aba_distribuicao = JanelaDistribuicao(
             self.tabview.tab("📈  Dashboard Geral"),
             self.data_manager, self.price_manager, self.analysis_engine,
+            on_review_operation=self._abrir_operacao_para_conciliar,
         )
         _embutir(self.aba_distribuicao)
 
@@ -309,6 +310,10 @@ class PortfolioDCA:
             self.janela.state("zoomed")
         except Exception:
             self.janela.attributes("-zoomed", True)
+
+    def _abrir_operacao_para_conciliar(self, indice):
+        self.tabview.set('⚙️  Histórico e Edição')
+        self.aba_edicao.carregar_operacao(indice,conciliacao=True)
 
     def _montar_validacao_data01(self):
         faixa = ctk.CTkFrame(

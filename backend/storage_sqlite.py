@@ -1100,7 +1100,7 @@ class ArmazemSQLite:
             raise ErroArmazenamento("Motivo documentado obrigatório (8 a 500 caracteres).")
         return motivo.strip()
 
-    def substituir(self, indice: int, valores: dict, *, motivo=None) -> bool:
+    def substituir(self, indice: int, valores: dict, *, motivo=None, conciliacao=False) -> bool:
         motivo=self._motivo_alteracao(motivo)
         row = _validar(valores, indice + 2)
         self._conferir_origem()
@@ -1121,7 +1121,19 @@ class ArmazemSQLite:
                 )
             anterior=dict(livro[indice])
             livro[indice] = row
-            validar_livro(livro, self._saldos_transacionais(con))
+            permitidas=set()
+            if conciliacao:
+                from backend.ledger_diagnostics import diagnosticar_operacoes
+                from backend.operation_integrity import validar_campos
+                # Only unchanged OTHER records whose sole defect is the gross
+                # relation may remain pending. The corrected row is fully valid.
+                validar_campos(row,indice+1)
+                for issue in diagnosticar_operacoes(livro):
+                    pos=issue['operacao']
+                    if pos != indice+1 and issue['diferenca_usdt'] not in (None,0):
+                        validar_campos(livro[pos-1],pos,conferir_relacao=False)
+                        permitidas.add(pos)
+            validar_livro(livro, self._saldos_transacionais(con),divergencias_legadas=permitidas)
             con.execute(
                 "UPDATE operacoes SET data=?, moeda=?, operacao=?, valor_usdt=?, "
                 "preco=?, quantidade=?, taxa_brl=?, taxa_corretagem_usdt=? WHERE id=?",
