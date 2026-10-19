@@ -60,7 +60,7 @@ class UiDispatcher:
                 target()
             except Exception as exc:
                 logger.exception('Falha em tarefa da interface')
-                self.post(lambda error=exc: self.widget.report_callback_exception(
+                self.post(lambda error=exc: self.widget._root().report_callback_exception(
                     type(error), error, error.__traceback__))
             finally:
                 self.post(self._finished)

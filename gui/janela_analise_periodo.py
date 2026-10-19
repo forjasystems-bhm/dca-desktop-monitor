@@ -385,7 +385,8 @@ class JanelaAnalisePeriodo(ctk.CTkFrame):
         ).pack(anchor="w", padx=20, pady=(17, 6))
         ctk.CTkLabel(
             janela,
-            text="Cotação = fechamento UTC do dia gravado no SQLite. "
+            text=f"Versão emitida: {resultado.get('versao_resultado', 'não versionada')}\n"
+                 "Cotação = fechamento UTC do dia gravado no SQLite. "
                  "Sem cotação, posição aberta fica INDISPONÍVEL; "
                  "posição encerrada preserva o resultado realizado.",
             font=ctk.CTkFont("Segoe UI", 11), text_color=TEXT_SECONDARY
