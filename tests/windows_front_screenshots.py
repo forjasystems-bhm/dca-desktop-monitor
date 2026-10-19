@@ -125,6 +125,9 @@ def main():
             # Need actual visible Windows Tk widgets, not HTML or illustrative frames.
             app = entry["PortfolioDCA"](root, dm, PrecosDeExemplo())
             app._countdown_ativo = False
+            if app._initial_refresh_id is not None:
+                root.after_cancel(app._initial_refresh_id)
+                app._initial_refresh_id = None
             if app._after_id is not None:
                 root.after_cancel(app._after_id)
                 app._after_id = None
@@ -258,6 +261,9 @@ def main():
             print("FRONT_CAPTURE=PASS", flush=True)
         finally:
             app._countdown_ativo = False
+            if app._initial_refresh_id is not None:
+                root.after_cancel(app._initial_refresh_id)
+                app._initial_refresh_id = None
             root.destroy()
 
 

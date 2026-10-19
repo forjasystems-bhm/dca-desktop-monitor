@@ -79,6 +79,16 @@ def main():
         try:
             root.geometry("1550x900")
             app = entry["PortfolioDCA"](root, dm, FakePriceManager())
+            # Manual quote scenarios below must not be overwritten by the
+            # automatic 1200ms initial sync with DIFFERENT fake price inputs.
+            # Refresh/concurrency behavior is exercised explicitly later.
+            if app._initial_refresh_id is not None:
+                root.after_cancel(app._initial_refresh_id)
+                app._initial_refresh_id = None
+            app._countdown_ativo = False
+            if app._after_id is not None:
+                root.after_cancel(app._after_id)
+                app._after_id = None
             root.update_idletasks()
             pump(root)
             tab = app.tabview.tab("📊  Análise por Período")
