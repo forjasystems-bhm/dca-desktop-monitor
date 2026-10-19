@@ -396,6 +396,39 @@ def main():
             assert first_ui._tipo_movimento.get() == "transferencia"
             print("GUI_CUST01_MOVIMENTACAO_EXTERNAS=PASS")
 
+            # F04: actual form keeps a command across double callbacks and
+            # retries; another real event needs explicit "Nova movimentação".
+            values = {
+                "Ativo movimentado":"BTC", "Origem (custódia)":"Cold wallet",
+                "Destino (custódia/USDT)":"Exchange A",
+                "Quantidade enviada/vendida":"0.005", "Taxa cobrada no ativo":"0",
+                "Receita bruta em USDT":"0", "Corretagem em USDT":"0",
+                "Data do movimento":"2026-10-01",
+                "Justificativa/comprovante":"Synthetic F04 Windows document",
+            }
+            for key,value in values.items():
+                first_ui._mov_campos[key].delete(0,"end")
+                first_ui._mov_campos[key].insert(0,value)
+            command_id = first_ui._movimento_id
+            def confirm_with_double_callback(*args, **kwargs):
+                first_ui._salvar_movimento()
+                return True
+            with patch("gui.janela_primeiro_uso.messagebox.askyesno",
+                       side_effect=confirm_with_double_callback):
+                first_ui._salvar_movimento()
+            first_ui._salvar_movimento()
+            assert len(new_db.carregar_movimentos_custodia()) == 1
+            assert first_ui._movimento_confirmado
+            assert first_ui._btn_movimento.cget("state") == "disabled"
+            assert first_ui._movimento_id == command_id
+            first_ui._nova_movimentacao()
+            assert first_ui._movimento_id != command_id
+            with patch("gui.janela_primeiro_uso.messagebox.askyesno", return_value=True):
+                first_ui._salvar_movimento()
+            assert len(new_db.carregar_movimentos_custodia()) == 2
+            assert not new_db.carregar_operacoes_precisas()
+            print("GUI_F04_IDEMPOTENCIA_E_EVENTOS_IGUAIS=PASS")
+
             first_win.destroy()
             print("GUI_PRE01_CUSTODIA_EXTERNA_SEM_COMPRA=PASS")
 

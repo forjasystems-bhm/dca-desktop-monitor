@@ -4,6 +4,7 @@ from __future__ import annotations
 from datetime import datetime
 from pathlib import Path
 from tkinter import filedialog, messagebox
+from uuid import uuid4
 import customtkinter as ctk
 
 from config.tema_cripto import (
@@ -23,6 +24,9 @@ class JanelaPrimeiroUso(ctk.CTkScrollableFrame):
         self._on_change = on_change
         self._on_begin_empty = on_begin_empty
         self._previa = None
+        self._movimento_id = str(uuid4())
+        self._movimento_em_envio = False
+        self._movimento_confirmado = False
         self._titulo = ctk.CTkLabel(
             self, text="PRIMEIRO ACESSO  ·  SEUS DADOS CONTINUAM SEUS",
             text_color=BTC_ORANGE, font=ctk.CTkFont("Segoe UI", 19, "bold"),
@@ -180,11 +184,19 @@ class JanelaPrimeiroUso(ctk.CTkScrollableFrame):
         self._mov_campos["Data do movimento"].insert(
             0,datetime.now().strftime("%Y-%m-%d")
         )
-        ctk.CTkButton(
-            mov, text="Registrar movimentação verificada",
+        acoes_movimento = ctk.CTkFrame(mov, fg_color="transparent")
+        acoes_movimento.pack(anchor="w", padx=14, pady=(6,12))
+        self._btn_movimento = ctk.CTkButton(
+            acoes_movimento, text="Registrar movimentação verificada",
             command=self._salvar_movimento, fg_color=BTC_ORANGE,
             text_color=BG_SURFACE,
-        ).pack(anchor="w", padx=14, pady=(6,12))
+        )
+        self._btn_movimento.pack(side="left")
+        self._btn_novo_movimento = ctk.CTkButton(
+            acoes_movimento, text="Nova movimentação", fg_color=BG_INPUT,
+            command=self._nova_movimentacao, state="disabled",
+        )
+        self._btn_novo_movimento.pack(side="left", padx=(10,0))
         self._movimentos_resumo=ctk.CTkLabel(
             mov,text="Nenhuma movimentação.",text_color=TEXT_SECONDARY,
             wraplength=870,justify="left",
@@ -337,19 +349,33 @@ class JanelaPrimeiroUso(ctk.CTkScrollableFrame):
         except Exception as exc:
             messagebox.showerror("Saldo não registrado", str(exc))
 
-    def _salvar_movimento(self):
-        vals={k:e.get().strip() for k,e in self._mov_campos.items()}
-        tipo=self._tipo_movimento.get()
-        if not messagebox.askyesno(
-            "Movimentação externa documentada",
-            f"Registrar {tipo} de {vals['Quantidade enviada/vendida']} "
-            f"{vals['Ativo movimentado']} em "
-            f"{vals['Origem (custódia)']}?\\n"
-            "Origem e destino serão conferidos pelo saldo externo. "
-            "O CSV original ficará intacto.",
-        ):
+    def _nova_movimentacao(self):
+        if self._movimento_em_envio:
             return
+        self._movimento_id = str(uuid4())
+        self._movimento_confirmado = False
+        self._btn_movimento.configure(state="normal")
+        self._btn_novo_movimento.configure(state="disabled")
+
+    def _salvar_movimento(self):
+        # Keep one identity across retries, including reentrant modal events.
+        # Only an explicit new movement creates another command, even if the
+        # financial values happen to be identical.
+        if self._movimento_em_envio or self._movimento_confirmado:
+            return
+        self._movimento_em_envio = True
         try:
+            vals={k:e.get().strip() for k,e in self._mov_campos.items()}
+            tipo=self._tipo_movimento.get()
+            if not messagebox.askyesno(
+                "Movimentação externa documentada",
+                f"Registrar {tipo} de {vals['Quantidade enviada/vendida']} "
+                f"{vals['Ativo movimentado']} em "
+                f"{vals['Origem (custódia)']}?\\n"
+                "Origem e destino serão conferidos pelo saldo externo. "
+                "O CSV original ficará intacto.",
+            ):
+                return
             r=self._db.registrar_movimento_custodia(
                 tipo=tipo, moeda=vals["Ativo movimentado"],
                 origem=vals["Origem (custódia)"],
@@ -360,7 +386,11 @@ class JanelaPrimeiroUso(ctk.CTkScrollableFrame):
                 receita_usdt=vals["Receita bruta em USDT"] if tipo=="venda" else "0",
                 taxa_usdt=vals["Corretagem em USDT"] if tipo=="venda" else "0",
                 observacao=vals["Justificativa/comprovante"],
+                comando_id=self._movimento_id,
             )
+            self._movimento_confirmado = True
+            self._btn_movimento.configure(state="disabled")
+            self._btn_novo_movimento.configure(state="normal")
             if r.get("aviso_backup_sqlite"):
                 messagebox.showwarning("Movimentação registrada",
                                        r["aviso_backup_sqlite"])
@@ -368,6 +398,8 @@ class JanelaPrimeiroUso(ctk.CTkScrollableFrame):
             self._on_change()
         except Exception as exc:
             messagebox.showerror("Movimentação recusada",str(exc))
+        finally:
+            self._movimento_em_envio = False
 
     def _corrigir_saldo(self):
         vals = {k: e.get().strip() for k,e in self._campos.items()}
