@@ -1,3 +1,4 @@
+from backend.ui_dispatch import UiDispatcher
 import tkinter as tk
 from tkinter import messagebox
 import threading
@@ -49,6 +50,7 @@ class JanelaDistribuicao(ctk.CTkFrame):
 
     def __init__(self, parent, data_manager, price_manager, analysis_engine, on_change=None):
         super().__init__(parent, fg_color="transparent")
+        self._tasks = UiDispatcher(self)
 
         self._data_manager  = data_manager
         self._price_manager = price_manager
@@ -310,7 +312,7 @@ class JanelaDistribuicao(ctk.CTkFrame):
 
     def atualizar(self):
         self.set_status("🔄 Calculando P&L...", CYAN)
-        threading.Thread(target=self._worker_atualizar, daemon=True).start()
+        self._tasks.run(self._worker_atualizar)
 
     def _worker_atualizar(self):
         try:
@@ -319,7 +321,7 @@ class JanelaDistribuicao(ctk.CTkFrame):
             externos = self._data_manager.carregar_posicoes_externas()
             movimentos = self._data_manager.carregar_movimentos_custodia()
             if not ops and not iniciais and not externos:
-                self.after(0, self._ui_vazia)
+                self._tasks.post(self._ui_vazia)
                 return
             preco_mgr = self._price_manager
             precos = (preco_mgr.precos_para_avaliacao()
@@ -345,12 +347,12 @@ class JanelaDistribuicao(ctk.CTkFrame):
                 saldos_externos=externos,
                 movimentos_custodia=movimentos,
             )
-            self.after(0, lambda: self._atualizar_ui(
+            self._tasks.post(lambda: self._atualizar_ui(
                 portfolio, usdt_pl, dist, taxa, auditoria,
             ))
         except Exception as e:
-            self.after(0, lambda: self.set_status("❌ Falha no processamento", NEON_RED))
-            self.after(0, lambda: messagebox.showerror("Exceção do Engine", str(e)))
+            self._tasks.post(lambda: self.set_status("❌ Falha no processamento", NEON_RED))
+            self._tasks.post(lambda error=str(e): messagebox.showerror("Exceção do Engine", error))
 
     def _ui_vazia(self):
         self._limpar_det_rows()

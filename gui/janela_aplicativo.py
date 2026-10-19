@@ -1,3 +1,4 @@
+from backend.ui_dispatch import UiDispatcher
 """Desktop settings: update checks, explicit shortcut, tray opt-in and backup recovery."""
 from pathlib import Path
 from tkinter import filedialog, messagebox
@@ -22,6 +23,7 @@ class JanelaAplicativo(ctk.CTkToplevel):
     def __init__(self, parent, data_manager, *, ao_restaurar=None,
                  ao_alterar_preferencia=None):
         super().__init__(parent)
+        self._tasks = UiDispatcher(self)
         self.title("DCA Monitor · Aplicativo e manutenção")
         self.geometry("960x720+70+45")
         self.minsize(780,560)
@@ -152,12 +154,12 @@ class JanelaAplicativo(ctk.CTkToplevel):
         def tarefa():
             result=verificar_release_estavel()
             try:
-                self.after(0,lambda: self.status_atualizacao.configure(
+                self._tasks.post(lambda: self.status_atualizacao.configure(
                     text=result["mensagem"]+" Nenhum pacote é instalado nesta etapa.",
                 ) if self.winfo_exists() else None)
             except Exception:
                 pass
-        threading.Thread(target=tarefa,daemon=True).start()
+        self._tasks.run(tarefa)
 
     def _criar_atalho(self):
         if not messagebox.askyesno(

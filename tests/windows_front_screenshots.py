@@ -45,7 +45,10 @@ class PrecosDeExemplo:
 def render(root):
     root.update_idletasks()
     root.update()
-    time.sleep(0.55)
+    deadline=time.monotonic()+0.55
+    while time.monotonic()<deadline:
+        root.update()
+        time.sleep(0.01)
     root.update_idletasks()
     root.update()
 
@@ -228,4 +231,7 @@ def main():
 
 
 if __name__ == "__main__":
+    from gui_error_guard import install, verify
+    install()
     main()
+    verify()

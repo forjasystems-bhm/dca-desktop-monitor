@@ -1,3 +1,4 @@
+from backend.ui_dispatch import UiDispatcher
 """Consulta histórica por ativo e consolidada (somente dados demonstráveis)."""
 from datetime import date, datetime, timedelta, timezone
 import threading
@@ -41,6 +42,7 @@ class JanelaAnalisePeriodo(ctk.CTkFrame):
 
     def __init__(self, parent, data_manager):
         super().__init__(parent, fg_color="transparent")
+        self._tasks = UiDispatcher(self)
         self._dados = data_manager
         self._filtro_periodo = ctk.StringVar(value="Todo o histórico")
         self._filtro_ativo = ctk.StringVar(value="Todos os ativos")
@@ -484,11 +486,11 @@ class JanelaAnalisePeriodo(ctk.CTkFrame):
                 else:
                     self._apurar_valor_historico()
             try:
-                self.after(0, concluir)
+                self._tasks.post(concluir)
             except Exception:
                 pass
 
-        threading.Thread(target=worker, daemon=True).start()
+        self._tasks.run(worker)
 
     def _on_periodo(self, selecionado, recarregar=True):
         estado = "normal" if selecionado == "Personalizado" else "disabled"

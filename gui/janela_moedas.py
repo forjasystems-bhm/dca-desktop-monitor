@@ -1,3 +1,4 @@
+from backend.ui_dispatch import UiDispatcher
 import threading
 import json
 import logging
@@ -37,6 +38,7 @@ class JanelaMoedas(ctk.CTkFrame):
 
     def __init__(self, parent, on_moedas_alteradas=None, price_manager=None):
         super().__init__(parent, fg_color=BG_DEEP)
+        self._tasks = UiDispatcher(self)
         self._on_moedas_alteradas = on_moedas_alteradas
         self._price_manager       = price_manager
         self._moedas: list[str]   = []
@@ -413,9 +415,9 @@ class JanelaMoedas(ctk.CTkFrame):
             valido = True
             if self._price_manager:
                 valido = self._price_manager.validar_moeda(simbolo)
-            self.after(0, lambda: self._finalizar_adicao(simbolo, valido))
+            self._tasks.post(lambda: self._finalizar_adicao(simbolo, valido))
 
-        threading.Thread(target=worker, daemon=True).start()
+        self._tasks.run(worker)
 
     def _finalizar_adicao(self, simbolo: str, valido: bool):
         self._entry_nova.configure(state="normal")

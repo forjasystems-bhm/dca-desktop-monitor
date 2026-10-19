@@ -1,3 +1,4 @@
+from backend.ui_dispatch import UiDispatcher
 import threading
 import tkinter as tk
 from tkinter import ttk, messagebox
@@ -66,6 +67,7 @@ _TREE_TAGS = {
 class JanelaCaixa(ctk.CTkFrame):
     def __init__(self, parent, data_manager, price_manager, analysis_engine):
         super().__init__(parent, fg_color=BG_DEEP, corner_radius=0)
+        self._tasks = UiDispatcher(self)
         self._data_manager  = data_manager
         self._price_manager = price_manager
         self._engine        = analysis_engine
@@ -330,7 +332,7 @@ class JanelaCaixa(ctk.CTkFrame):
         self.lbl_status.configure(text="⟳  calculando...", text_color=CYAN)
         for row in self.tree.get_children():
             self.tree.delete(row)
-        threading.Thread(target=self._worker_atualizar, daemon=True).start()
+        self._tasks.run(self._worker_atualizar)
 
     def _worker_atualizar(self):
         try:
@@ -358,10 +360,10 @@ class JanelaCaixa(ctk.CTkFrame):
                 self._data_manager._store.quantidade_usdc_de_origem_legada()
                 if hasattr(self._data_manager, "_store") else 0
             )
-            self.after(0, lambda: self._atualizar_ui(info, stable))
+            self._tasks.post(lambda: self._atualizar_ui(info, stable))
         except Exception as e:
-            self.after(0, lambda: self.lbl_status.configure(text="✕ erro", text_color=NEON_RED))
-            self.after(0, lambda: messagebox.showerror("Erro", f"Erro ao carregar saldo:\n{e}"))
+            self._tasks.post(lambda: self.lbl_status.configure(text="✕ erro", text_color=NEON_RED))
+            self._tasks.post(lambda error=str(e): messagebox.showerror("Erro", f"Erro ao carregar saldo:\n{error}"))
 
     def _atualizar_ui(self, info, stable=None):
         if stable is not None:

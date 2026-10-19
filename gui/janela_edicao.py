@@ -1,3 +1,4 @@
+from backend.ui_dispatch import UiDispatcher
 import tkinter as tk
 from tkinter import ttk, messagebox, simpledialog
 from decimal import Decimal, InvalidOperation
@@ -43,6 +44,7 @@ class JanelaEdicao(ctk.CTkFrame):
         on_change: Optional[Callable] = None,
     ):
         super().__init__(parent, fg_color=BG_SURFACE)
+        self._tasks = UiDispatcher(self)
 
         self._data_manager    = data_manager
         self._price_manager   = price_manager
@@ -307,7 +309,7 @@ class JanelaEdicao(ctk.CTkFrame):
         for item in self._tree.get_children():
             self._tree.delete(item)
 
-        threading.Thread(target=self._worker_carregar_dados, daemon=True).start()
+        self._tasks.run(self._worker_carregar_dados)
 
     def _worker_carregar_dados(self) -> None:
         try:
@@ -321,10 +323,10 @@ class JanelaEdicao(ctk.CTkFrame):
                     return datetime.min
 
             ops_com_indice.sort(key=get_data_segura, reverse=True)
-            self.after(0, lambda: self._renderizar_tree(ops_com_indice))
+            self._tasks.post(lambda: self._renderizar_tree(ops_com_indice))
         except Exception as e:
             self._carregando = False
-            self.after(0, lambda: self.lbl_status.configure(text="⚠️ Erro ao carregar", text_color="red"))
+            self._tasks.post(lambda: self.lbl_status.configure(text="⚠️ Erro ao carregar", text_color="red"))
             logger.error(f"Erro no histórico: {e}")
 
     def _renderizar_tree(self, ops_com_indice: list) -> None:

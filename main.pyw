@@ -26,6 +26,7 @@ from gui.janela_moedas import JanelaMoedas
 from gui.janela_analise_periodo import JanelaAnalisePeriodo
 from gui.janela_primeiro_uso import JanelaPrimeiroUso
 from gui.janela_aplicativo import JanelaAplicativo
+from backend.ui_dispatch import UiDispatcher
 from backend.app_lifecycle import carregar_preferencias
 from backend.tray_windows import BandejaWindows, ErroBandeja
 
@@ -62,6 +63,7 @@ class PortfolioDCA:
         self.analysis_engine = AnalysisEngine()
         self._stop_updates   = False
         self._closing = False
+        self._ui_tasks = UiDispatcher(janela)
         self._refresh_lock = threading.Lock()
         self._initial_refresh_id = None
         self._primeiro_uso_janela = None
@@ -409,14 +411,7 @@ class PortfolioDCA:
         """Descarta resultados de tarefas encerradas, sem criar janelas ocultas."""
         if self._closing:
             return False
-        try:
-            self.janela.after(
-                0, lambda: None if self._closing else acao()
-            )
-            return True
-        except Exception:
-            # Tk pode já ter sido destruído ao finalizar a aplicação.
-            return False
+        return self._ui_tasks.post(lambda: None if self._closing else acao())
 
     def atualizar_todas_as_analises(self) -> bool:
         """No more than one Binance sync at a time; offline is non-blocking."""
@@ -525,6 +520,7 @@ class PortfolioDCA:
                 )
                 return
         self._closing = True
+        self._ui_tasks.close()
         self._tray.parar()
         if (self._janela_aplicativo is not None
                 and self._janela_aplicativo.winfo_exists()):

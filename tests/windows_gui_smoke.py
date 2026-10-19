@@ -27,6 +27,14 @@ class FakePriceManager:
     def atualizar_precos(self, moedas): return True
 
 
+def pump(root):
+    import time
+    deadline=time.monotonic()+0.08
+    while time.monotonic()<deadline:
+        root.update()
+        time.sleep(0.01)
+
+
 def main():
     projeto = Path(__file__).resolve().parent.parent
     fixture = projeto / "tests" / "fixtures" / "preview_operacoes.csv"
@@ -72,12 +80,12 @@ def main():
             root.geometry("1550x900")
             app = entry["PortfolioDCA"](root, dm, FakePriceManager())
             root.update_idletasks()
-            root.update()
+            pump(root)
             tab = app.tabview.tab("📊  Análise por Período")
             assert tab.winfo_exists(), "Aba de análise financeira não foi montada."
             app.aba_analise.atualizar()
             root.update_idletasks()
-            root.update()
+            pump(root)
             cards = app.aba_analise._indicadores
             assert len(cards) == 6, f"Indicadores ausentes: {list(cards)}"
             assert "1,750" in cards["compras_historicas"].cget("text")
@@ -99,7 +107,7 @@ def main():
             assert "2,180.00" in ui._historico_valores.cget("text")
             janela_detalhes = ui._detalhar_ativos_na_data()
             root.update_idletasks()
-            root.update()
+            pump(root)
             linhas = [
                 ui._detalhes_tabela.item(item)["values"]
                 for item in ui._detalhes_tabela.get_children()
@@ -130,7 +138,7 @@ def main():
                 portfolio_sem_eth, None, dist_sem_eth, 5.1
             )
             root.update_idletasks()
-            root.update()
+            pump(root)
             dash = app.aba_distribuicao
             assert dash._lbl_patrimonio.cget("text") == "Indisponível"
             assert dash._lbl_pl_nr.cget("text") == "Indisponível"
@@ -155,7 +163,7 @@ def main():
                 5.1,
             )
             root.update_idletasks()
-            root.update()
+            pump(root)
             assert "Indisponível" not in dash._lbl_patrimonio.cget("text")
             # FIN-04: USDC does not finance USDT, and is not a 1:1 asset.
             assert dm.salvar_operacao([
@@ -180,7 +188,7 @@ def main():
             )
             dash._atualizar_ui(carteira, None, distribuicao, 5.1)
             root.update_idletasks()
-            root.update()
+            pump(root)
             assert carteira["totais"]["valor_atual"] == 2623
             assert "2,623" in dash._lbl_patrimonio.cget("text")
             assert dash._lbl_pl_nr.cget("text") == "Indisponível"
@@ -214,7 +222,7 @@ def main():
             with patch.object(entry["threading"], "Thread", ThreadDireta):
                 app.atualizar_todas_as_analises()
             root.update_idletasks()
-            root.update()
+            pump(root)
             assert False in chamadas_refresh, chamadas_refresh
             app._atualizar_abas_seguro = original_refresh
             app.price_manager.atualizar_precos = original_preco
@@ -264,7 +272,7 @@ def main():
             dash.display_currency = "BRL"
             dash._atualizar_ui(portfolio_audit, None, dist_audit, 5.10, audit)
             root.update_idletasks()
-            root.update()
+            pump(root)
             assert dash._lbl_retorno.cget("text") == "+10.00%"
             assert "100.00 USDT" in dash._lbl_pl_r.cget("text")
             assert "100.00 USDT" in dash._lbl_pl.cget("text")
@@ -278,7 +286,7 @@ def main():
             root.state("normal")
             root.geometry("980x700+5+5")
             root.update_idletasks()
-            root.update()
+            pump(root)
             dash = app.aba_distribuicao
             canvas = dash._det_canvas
             assert canvas.winfo_width() >= 250, canvas.winfo_width()
@@ -288,7 +296,7 @@ def main():
             assert len(dash._det_rows[0]._labels) == 10
             assert dash._det_rows[0]._labels[9].winfo_width() >= 90
             canvas.xview_moveto(1.0)
-            root.update()
+            pump(root)
             assert canvas.xview()[0] > 0.10, canvas.xview()
             assert canvas.winfo_width() < dash._det_rows[0].winfo_width()
             print("GUI_UI01_DASHBOARD_HORIZONTAL=PASS")
@@ -303,10 +311,10 @@ def main():
             assert "1,680.00" in analise._historico_cards["caixa_usdt"].cget("text")
             assert analise._historico_valores.cget("wraplength") <= 900
             scroll = analise._conteudo_rolavel._parent_canvas
-            root.update()
+            pump(root)
             assert scroll.yview()[1] < 1.0, scroll.yview()
             scroll.yview_moveto(1.0)
-            root.update()
+            pump(root)
             assert scroll.yview()[0] > 0.0, scroll.yview()
             assert analise._arvore.winfo_exists()
             print("GUI_UI01_ANALYSIS_SCROLL_AND_CARDS=PASS")
@@ -324,17 +332,17 @@ def main():
 
             app.tabview.set("✏️  Registrar Operação")
             root.update_idletasks()
-            root.update()
+            pump(root)
             form_scroller = app.aba_registro._scroll_registro._parent_canvas
             assert app.aba_registro._btn_salvar.winfo_exists()
             form_scroller.yview_moveto(1.0)
-            root.update()
+            pump(root)
             assert form_scroller.yview()[0] > 0.0, form_scroller.yview()
             print("GUI_UI01_OPERACAO_CONFIRMACAO_ACESSIVEL=PASS")
 
             app.tabview.set("💰  Caixa (USD/BRL)")
             root.update_idletasks()
-            root.update()
+            pump(root)
             extrato = app.aba_caixa.tree
             assert app.aba_caixa._extrato_scroll_horizontal.winfo_exists()
             for coluna in ("Data", "Tipo", "Descrição", "Saldo Atualizado"):
@@ -378,7 +386,7 @@ def main():
                 first_win, new_db, lambda: None, lambda: None
             )
             first_ui.pack(fill="both", expand=True)
-            root.update()
+            pump(root)
             assert first_ui._externo_flag.get() is False
             first_ui._externo_flag.set(True)
             assert first_ui._externo_flag.get()
@@ -387,7 +395,7 @@ def main():
                 data_posicao="2026-09-30",confirmacao_independente=True,
             )
             first_ui.atualizar()
-            root.update()
+            pump(root)
             assert "EXTERNOS AO CSV" in first_ui._posicoes.cget("text")
             assert "Cold wallet" in first_ui._posicoes.cget("text")
             assert new_db.carregar_operacoes_precisas() == []
@@ -435,7 +443,7 @@ def main():
             # DIST/OPS: settings are real desktop controls, not new dashboard tabs.
             app._abrir_configuracoes()
             root.update_idletasks()
-            root.update()
+            pump(root)
             settings=app._janela_aplicativo
             assert settings.winfo_exists()
             assert settings._btn_instalar.cget("state") == "disabled"
@@ -492,4 +500,7 @@ def main():
 
 
 if __name__ == "__main__":
+    from gui_error_guard import install, verify
+    install()
     main()
+    verify()
