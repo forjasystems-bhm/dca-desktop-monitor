@@ -53,3 +53,24 @@ class BackupIdentityTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError,'outra carteira'):
                 ativar_restauracao_offline(Path(manifest),one.arquivo_db,
                     confirmacao=CONFIRMACAO,aplicativo_encerrado=True)
+
+class DisasterRecoveryTests(unittest.TestCase):
+    def test_f09_lost_or_corrupt_database_can_be_recovered_offline(self):
+        from backend.backup_sqlite import criar_backup_sqlite
+        from backend.restore_offline import ativar_restauracao_offline,CONFIRMACAO
+        for state in ('missing','corrupt'):
+            with self.subTest(state=state),TemporaryDirectory() as temp:
+                root=Path(temp);dm=DataManager(data_dir=root/'data',auto_import_legacy=False)
+                dm.registrar_posicao_externa(moeda='BTC',quantidade='1',custodia='A',
+                    data_posicao='2026-01-01',confirmacao_independente=True)
+                manifest=criar_backup_sqlite(dm.arquivo_db,root/'backup')['manifesto']
+                with closing(sqlite3.connect(dm.arquivo_db)) as c:c.execute('PRAGMA wal_checkpoint(TRUNCATE)')
+                if state=='missing':dm.arquivo_db.unlink()
+                else:dm.arquivo_db.write_bytes(b'CORRUPT ORIGINAL EVIDENCE')
+                result=ativar_restauracao_offline(Path(manifest),dm.arquivo_db,
+                    confirmacao=CONFIRMACAO,aplicativo_encerrado=True)
+                self.assertTrue(result['ativado'])
+                if state=='corrupt':
+                    self.assertEqual(Path(result['rollback_original']).read_bytes(),b'CORRUPT ORIGINAL EVIDENCE')
+                reopened=DataManager(data_dir=root/'data',auto_import_legacy=False)
+                self.assertEqual(reopened.carregar_posicoes_externas()[0]['Quantidade'],'1')

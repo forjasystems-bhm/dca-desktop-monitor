@@ -50,3 +50,17 @@ def executar_manutencao_restauracao(manifesto: Path, banco: Path) -> bool:
         return True
     finally:
         window.destroy()
+
+
+def executar_assistente_recuperacao():
+    """Entry point independent of the operational DB and normal GUI boot."""
+    from tkinter import filedialog
+    from backend.storage_sqlite import diretorio_dados_padrao
+    chooser=Tk();chooser.withdraw()
+    try:
+        manifest=filedialog.askopenfilename(parent=chooser,title='Escolher manifesto do backup DCA',
+                                           filetypes=[('Manifesto DCA','*.json')])
+        if not manifest:return False
+        return executar_manutencao_restauracao(Path(manifest),diretorio_dados_padrao()/'portfolio.sqlite3')
+    finally:
+        chooser.destroy()
