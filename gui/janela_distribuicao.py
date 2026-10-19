@@ -1,4 +1,5 @@
 from backend.ui_dispatch import UiDispatcher
+from backend.metricas_exibicao import metricas_ativo, totais_exibicao
 import tkinter as tk
 from tkinter import messagebox
 import threading
@@ -613,61 +614,15 @@ class JanelaDistribuicao(ctk.CTkFrame):
         return (self._brl or {}).get("ativos", {}).get(moeda)
 
     def _metricas(self, moeda: str, dados: dict) -> dict:
-        est = dados.get("estimado", False)
-        if self.display_currency != "BRL":
-            return {
-                "pmc": dados.get("pmc_final", 0),
-                "custo": dados.get("custo_posicao_final", 0),
-                "pl_nr": dados.get("lucro_nao_realizado"),
-                "pl_r": dados.get("lucro_realizado", 0),
-                "pl_tot": dados.get("lucro_total"),
-                "comprado": dados.get("total_comprado_usdt", 0),
-                "est": est,
-            }
-        livro = self._livro_brl(moeda)
-        if livro is None:
-            return {"pmc": None, "custo": None, "pl_nr": None, "pl_r": None,
-                    "pl_tot": None, "comprado": 0, "est": est}
-        num = lambda v: None if v is None else float(v)
-        aberta = dados.get("quantidade_final", 0) > 1e-9
-        qtd_livro = float(livro["quantidade"])
-        custo = num(livro["custo_aberto"])
-        if custo is not None and not aberta:
-            custo = 0.0
-        pmc = (None if custo is None else
-               custo / qtd_livro if aberta and qtd_livro > 1e-12 else 0.0)
-        v_atual = dados.get("valor_atual_posicao")
-        taxa = self._taxa_brl_valida
-        if custo is None:
-            pl_nr = None
-        elif not aberta:
-            pl_nr = 0.0
-        elif v_atual is None or taxa is None:
-            pl_nr = None
-        else:
-            pl_nr = v_atual * taxa - custo
-        pl_r = num(livro["realizado_historico"])
-        return {
-            "pmc": pmc, "custo": custo, "pl_nr": pl_nr, "pl_r": pl_r,
-            "pl_tot": None if pl_nr is None or pl_r is None else pl_nr + pl_r,
-            "comprado": num(livro["compras_historicas"]) or 0,
-            "est": est or livro.get("estimado", False),
-        }
+        return metricas_ativo(dados, self._livro_brl(moeda),
+                              brl=self.display_currency == "BRL",
+                              taxa_brl=self._taxa_brl_valida)
 
     def _totais_exibicao(self, resumo: dict, moedas_dados: dict):
-        est = resumo.get("estimado", False)
-        if self.display_currency != "BRL":
-            return (resumo.get("investido_liquido", 0), resumo.get("nao_realizado"),
-                    resumo.get("realizado", 0), resumo.get("compras_historicas_usdt", 0), est)
         metricas = [self._metricas(m, d) for m, d in moedas_dados.items()
                     if m not in _LINHAS_CAIXA]
-        soma = lambda chave: (None if any(x[chave] is None for x in metricas)
-                              else sum(x[chave] for x in metricas))
-        totais_brl = (self._brl or {}).get("totais", {})
-        comprado = totais_brl.get("compras_historicas")
-        return (soma("custo"), soma("pl_nr"), soma("pl_r"),
-                None if comprado is None else float(comprado),
-                est or any(x["est"] for x in metricas))
+        return totais_exibicao(resumo, metricas, (self._brl or {}).get("totais"),
+                               brl=self.display_currency == "BRL")
 
     def _inserir_detalhe(self, moeda: str, dados: dict, idx: int):
         qtd = dados.get("quantidade_final", 0)
