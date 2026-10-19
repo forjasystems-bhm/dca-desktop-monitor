@@ -538,6 +538,7 @@ class JanelaAnalisePeriodo(ctk.CTkFrame):
             self._analise_brl = apurar_brl_historico(
                 ops, inicio=inicio, fim=fim, saldos_iniciais=iniciais,
                 saldos_externos=externos, movimentos_custodia=movimentos,
+                estimar=True,
             )
             itens = ["Todos os ativos", *self._analise["ativos"].keys()]
             self._ativos.configure(values=itens)
@@ -577,8 +578,10 @@ class JanelaAnalisePeriodo(ctk.CTkFrame):
 
         est_registro = (
             bool(self._analise.get("pendencias_conciliacao"))
+            or (brl and modelo.get("estimado", False))
             if selecionado == "Todos os ativos"
             else todos.get(selecionado, {}).get("estimado", False)
+            or (brl and modelo["ativos"].get(selecionado, {}).get("estimado", False))
         )
         for key, lbl in self._indicadores.items():
             valor = registro.get(key)
@@ -591,7 +594,7 @@ class JanelaAnalisePeriodo(ctk.CTkFrame):
             self._arvore.delete(item)
         for nome, s_usdt in exibidos.items():
             s = modelo["ativos"].get(nome, {})
-            est = s_usdt.get("estimado", False)
+            est = s_usdt.get("estimado", False) or (brl and s.get("estimado", False))
             valores = [
                 nome, self._valor(s.get("compras_historicas")),
                 self._valor(s.get("compras_periodo")),
@@ -601,7 +604,7 @@ class JanelaAnalisePeriodo(ctk.CTkFrame):
                 aprox((self._valor(s.get("custo_aberto")) if brl else
                        ("Não apurado" if nome in self._analise["ativos_sem_custo"]
                         else self._valor(s_usdt["custo_aberto"]))), est),
-                self._valor(s_usdt["quantidade"], 8),
+                self._valor(max(s_usdt["quantidade"], Decimal("0")), 8),
             ]
             self._arvore.insert(
                 "", "end", values=valores,

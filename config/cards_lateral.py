@@ -35,7 +35,7 @@ _BG_ROW_HOV = _lighten(BG_CARD, 0.16)
 _ITEMS_DEF = [
     ("patrimonio", "💼 Patrimônio Total",  "preço mercado × posição",  BTC_ORANGE),
     ("custo",      "📥 Custo Posição",     "capital das posições abertas", CYAN),
-    ("compras_hist","📚 Compras Históricas","total comprado em ativos (USDT)", CYAN),
+    ("compras_hist","📚 Compras Históricas","total comprado em ativos", CYAN),
     ("pl_nr",      "📈 P/L Não Realizado", "ganho em aberto",           NEON_GREEN),
     ("pl_r",       "💰 P/L Realizado",     "lucro já sacado/vendido",   NEON_GREEN),
     ("pl",         "🏁 P/L Total",         "realizado + não realizado", NEON_GREEN),

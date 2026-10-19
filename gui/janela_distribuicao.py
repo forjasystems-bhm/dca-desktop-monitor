@@ -31,6 +31,8 @@ _CORES_ATIVOS   = ["#f7931a", "#58a6ff", "#00ff88", "#e3b341", "#a371f7",
 _DIVERSIFICACAO = [(7, "🟢 Excelente", NEON_GREEN), (4, "🟡 Moderada", YELLOW),
                    (2, "🟠 Baixa", "#e3b341"),       (0, "🔴 Mínima",  NEON_RED)]
 
+_LINHAS_CAIXA = ("totais", "USDT (Caixa)", "USDC (Caixa)")
+
 _DET_COLS = (
     "Ativo", "Posição", "Preço Médio", "Preço Mercado",
     "Custo Posição", "Valor Atual",
@@ -61,6 +63,7 @@ class JanelaDistribuicao(ctk.CTkFrame):
         self._usdt_pl_brl     = {}
         self._taxa_brl_valida = None
         self._ultimo_resultado = None
+        self._brl = None
         self.display_currency = "USD"
         self.brl_toggle_var   = tk.BooleanVar(value=False)
 
@@ -335,15 +338,19 @@ class JanelaDistribuicao(ctk.CTkFrame):
             return f"R${val * self._taxa_brl_valida:,.2f}"
         return f"${val:,.2f}"
 
-    @staticmethod
-    def _fmt_val_historico(val):
-        # P/L realizado e custo de entrada permanecem em sua unidade de
-        # escrituração; converter pelo câmbio de hoje inventaria BRL histórico.
-        return "Indisponível" if val is None else f"{val:,.2f} USDT"
+    def _fmt_hist(self, val):
+        if val is None:
+            return "Indisponível"
+        if self.display_currency == "BRL":
+            return f"{'-' if val < 0 else ''}R${abs(val):,.2f}"
+        return f"{val:,.2f} USDT"
 
-    @staticmethod
-    def _fmt_prc_historico(val):
-        return "Indisponível" if val is None else f"{val:,.4f} USDT"
+    def _fmt_hist_prc(self, val):
+        if val is None:
+            return "Indisponível"
+        if self.display_currency == "BRL":
+            return f"R${val:,.4f}"
+        return f"{val:,.4f} USDT"
 
     _TXT_ROLAGEM = "Arraste a barra inferior para ver todas as colunas  →"
     _TXT_APROX = "   ·   ≈ valor aproximado (taxa/arredondamento em lançamentos antigos)"
@@ -377,8 +384,8 @@ class JanelaDistribuicao(ctk.CTkFrame):
             pm = self._price_manager
             taxa = (pm.taxa_brl_para_avaliacao()
                     if hasattr(pm, "taxa_brl_para_avaliacao") else pm.preco_brl)
-            portfolio, usdt_pl, dist, _, auditoria = self._ultimo_resultado
-            self._atualizar_ui(portfolio, usdt_pl, dist, taxa, auditoria)
+            portfolio, usdt_pl, dist, _, auditoria, brl = self._ultimo_resultado
+            self._atualizar_ui(portfolio, usdt_pl, dist, taxa, auditoria, brl)
         else:
             self.atualizar()
 
@@ -408,9 +415,15 @@ class JanelaDistribuicao(ctk.CTkFrame):
                 movimentos_custodia=movimentos,
             )
             from backend.financial_audit import auditar_carteira_atual
+            from backend.finance_brl import apurar_brl_historico
+            ops_precisas = self._data_manager.carregar_operacoes_precisas()
             auditoria = auditar_carteira_atual(
-                self._data_manager.carregar_operacoes_precisas(), portfolio,
+                ops_precisas, portfolio,
                 saldos_iniciais=iniciais, saldos_externos=externos,
+            )
+            brl = apurar_brl_historico(
+                ops_precisas, saldos_iniciais=iniciais, saldos_externos=externos,
+                movimentos_custodia=movimentos, estimar=True,
             )
             # Histórico FX não comprova custo em BRL do depósito USDT.
             usdt_pl = None
@@ -420,7 +433,7 @@ class JanelaDistribuicao(ctk.CTkFrame):
                 movimentos_custodia=movimentos,
             )
             self._tasks.post(lambda: self._atualizar_ui(
-                portfolio, usdt_pl, dist, taxa, auditoria,
+                portfolio, usdt_pl, dist, taxa, auditoria, brl,
             ))
         except Exception as e:
             self._tasks.post(lambda: self.set_status("❌ Falha no processamento", NEON_RED))
@@ -428,6 +441,7 @@ class JanelaDistribuicao(ctk.CTkFrame):
 
     def _ui_vazia(self):
         self._ultimo_resultado = None
+        self._brl = None
         self._limpar_det_rows()
         self.set_status("", TEXT_SECONDARY)
         self._resetar_cards()
@@ -452,11 +466,12 @@ class JanelaDistribuicao(ctk.CTkFrame):
         row._eh_vazio = True
         self._det_rows.append(row)
 
-    def _atualizar_ui(self, portfolio, usdt_pl, dist, taxa_brl=None, auditoria=None):
+    def _atualizar_ui(self, portfolio, usdt_pl, dist, taxa_brl=None, auditoria=None, brl=None):
         if self._det_rows and getattr(self._det_rows[0], '_eh_vazio', False):
             self._limpar_det_rows()
 
-        self._ultimo_resultado = (portfolio, usdt_pl, dist, taxa_brl, auditoria)
+        self._ultimo_resultado = (portfolio, usdt_pl, dist, taxa_brl, auditoria, brl)
+        self._brl = brl
         self._usdt_pl_brl = usdt_pl
         self._taxa_brl_valida = taxa_brl if taxa_brl and taxa_brl > 0 else None
         resumo = portfolio.get("totais", {})
@@ -502,8 +517,9 @@ class JanelaDistribuicao(ctk.CTkFrame):
             for moeda_pl, dados_pl in portfolio.items():
                 if moeda_pl in ("totais", "USDT (Caixa)"):
                     continue
-                custo_pl = dados_pl.get("custo_posicao_final", 0)
-                pl_valido = dados_pl.get("lucro_nao_realizado")
+                m_pl = self._metricas(moeda_pl, dados_pl)
+                custo_pl = m_pl["custo"]
+                pl_valido = m_pl["pl_nr"]
                 if custo_pl is not None and custo_pl > 0.000001 and pl_valido is not None:
                     pl_map[moeda_pl] = pl_valido / custo_pl * 100
 
@@ -532,16 +548,13 @@ class JanelaDistribuicao(ctk.CTkFrame):
             if self._det_sel is linha_sobrando:
                 self._det_sel = None
 
-        tot_custo = resumo.get("investido_liquido", 0)
         tot_val = resumo.get("valor_atual")
-        tot_pl_nr = resumo.get("nao_realizado")
-        tot_pl_r = resumo.get("realizado", 0)
+        tot_custo, tot_pl_nr, tot_pl_r, tot_comprado, est = self._totais_exibicao(resumo, moedas_dados)
         tot_pl = None if tot_pl_nr is None or tot_pl_r is None else tot_pl_nr + tot_pl_r
         pct_nr = (
             tot_pl_nr / tot_custo * 100 if tot_pl_nr is not None
-            and tot_custo > 0.000001 else None
+            and tot_custo is not None and tot_custo > 0.000001 else None
         )
-        tot_comprado = resumo.get("compras_historicas_usdt", 0)
         # FIN-06: giro de compras NUNCA é denominador da rentabilidade.
         retorno_estimado = auditoria["retorno_dietz_percentual"]
         pct_total = float(retorno_estimado) if retorno_estimado is not None else None
@@ -550,18 +563,16 @@ class JanelaDistribuicao(ctk.CTkFrame):
         cor_r = TEXT_MUTED if tot_pl_r is None else NEON_GREEN if tot_pl_r >= 0 else NEON_RED
         cor_retorno = TEXT_MUTED if pct_total is None else NEON_GREEN if pct_total >= 0 else NEON_RED
 
-        est = resumo.get("estimado", False)
         self._lbl_patrimonio.configure(text=self._fmt_val(tot_val))
         self._lbl_custo.configure(
-            text=self._aprox(self._fmt_val_historico(tot_custo), est) + (
+            text=self._aprox(self._fmt_hist(tot_custo), est) + (
                 " (parcial: posições sem custo)" if resumo.get("base_de_custo_incompleta") else ""
             )
         )
-        # Compras históricas: sempre USDT, sem câmbio atual aplicado retroativamente.
-        self._lbl_compras_hist.configure(text=f"{tot_comprado:,.2f} USDT")
-        self._lbl_pl_nr.configure(text=self._aprox(self._fmt_val_historico(tot_pl_nr), est), text_color=cor_nr)
-        self._lbl_pl_r.configure(text=self._aprox(self._fmt_val_historico(tot_pl_r), est), text_color=cor_r)
-        self._lbl_pl.configure(text=self._aprox(self._fmt_val_historico(tot_pl), est), text_color=cor_pl)
+        self._lbl_compras_hist.configure(text=self._aprox(self._fmt_hist(tot_comprado), est))
+        self._lbl_pl_nr.configure(text=self._aprox(self._fmt_hist(tot_pl_nr), est), text_color=cor_nr)
+        self._lbl_pl_r.configure(text=self._aprox(self._fmt_hist(tot_pl_r), est), text_color=cor_r)
+        self._lbl_pl.configure(text=self._aprox(self._fmt_hist(tot_pl), est), text_color=cor_pl)
         self._lbl_pct.configure(
             text=self._aprox(f"{pct_nr:+.2f}%", est) if pct_nr is not None else "Indisponível",
             text_color=cor_nr,
@@ -570,26 +581,27 @@ class JanelaDistribuicao(ctk.CTkFrame):
             text=self._aprox(f"{pct_total:+.2f}%", est) if pct_total is not None else "Não apurado",
             text_color=cor_retorno,
         )
-        tem_aprox = est or any(d.get("estimado") for d in moedas_dados.values())
+        tem_aprox = est or any(
+            self._metricas(m, d)["est"] for m, d in moedas_dados.items()
+            if m not in _LINHAS_CAIXA
+        )
         self._lbl_legenda.configure(
             text=self._TXT_ROLAGEM + (self._TXT_APROX if tem_aprox else "")
         )
 
-        moedas_validas = [(m, d) for m, d in ord_port if m != "USDT (Caixa)" and d.get("lucro_total") is not None]
+        metricas = [(m, self._metricas(m, d)) for m, d in ord_port if m not in _LINHAS_CAIXA]
+        moedas_validas = [(m, x) for m, x in metricas if x["pl_tot"] is not None]
         if moedas_validas:
-            melhor = max(moedas_validas, key=lambda x: x[1].get("lucro_total", 0))
-            pior   = min(moedas_validas, key=lambda x: x[1].get("lucro_total", 0))
-
-            def _pct_ativo(d):
-                c = d.get("custo_posicao_final", 0)
-                pl_nr = d.get("lucro_nao_realizado")
-                return (pl_nr / c * 100) if c is not None and c > 0.000001 and pl_nr is not None else None
+            melhor = max(moedas_validas, key=lambda item: item[1]["pl_tot"])
+            pior   = min(moedas_validas, key=lambda item: item[1]["pl_tot"])
 
             def _legenda_ativo(item):
-                p = _pct_ativo(item[1])
+                x = item[1]
+                p = (x["pl_nr"] / x["custo"] * 100
+                     if x["custo"] is not None and x["custo"] > 0.000001
+                     and x["pl_nr"] is not None else None)
                 percentual = f"{p:+.1f}%" if p is not None else "—"
-                valor = self._aprox(self._fmt_val_historico(item[1]['lucro_total']),
-                                    item[1].get("estimado", False))
+                valor = self._aprox(self._fmt_hist(x["pl_tot"]), x["est"])
                 return f"{item[0]}  {valor}  ({percentual})"
             self._lbl_melhor.configure(text=_legenda_ativo(melhor))
             self._lbl_pior.configure(text=_legenda_ativo(pior))
@@ -597,16 +609,74 @@ class JanelaDistribuicao(ctk.CTkFrame):
             self._lbl_melhor.configure(text="--")
             self._lbl_pior.configure(  text="--")
 
+    def _livro_brl(self, moeda):
+        return (self._brl or {}).get("ativos", {}).get(moeda)
+
+    def _metricas(self, moeda: str, dados: dict) -> dict:
+        est = dados.get("estimado", False)
+        if self.display_currency != "BRL":
+            return {
+                "pmc": dados.get("pmc_final", 0),
+                "custo": dados.get("custo_posicao_final", 0),
+                "pl_nr": dados.get("lucro_nao_realizado"),
+                "pl_r": dados.get("lucro_realizado", 0),
+                "pl_tot": dados.get("lucro_total"),
+                "comprado": dados.get("total_comprado_usdt", 0),
+                "est": est,
+            }
+        livro = self._livro_brl(moeda)
+        if livro is None:
+            return {"pmc": None, "custo": None, "pl_nr": None, "pl_r": None,
+                    "pl_tot": None, "comprado": 0, "est": est}
+        num = lambda v: None if v is None else float(v)
+        aberta = dados.get("quantidade_final", 0) > 1e-9
+        qtd_livro = float(livro["quantidade"])
+        custo = num(livro["custo_aberto"])
+        if custo is not None and not aberta:
+            custo = 0.0
+        pmc = (None if custo is None else
+               custo / qtd_livro if aberta and qtd_livro > 1e-12 else 0.0)
+        v_atual = dados.get("valor_atual_posicao")
+        taxa = self._taxa_brl_valida
+        if custo is None:
+            pl_nr = None
+        elif not aberta:
+            pl_nr = 0.0
+        elif v_atual is None or taxa is None:
+            pl_nr = None
+        else:
+            pl_nr = v_atual * taxa - custo
+        pl_r = num(livro["realizado_historico"])
+        return {
+            "pmc": pmc, "custo": custo, "pl_nr": pl_nr, "pl_r": pl_r,
+            "pl_tot": None if pl_nr is None or pl_r is None else pl_nr + pl_r,
+            "comprado": num(livro["compras_historicas"]) or 0,
+            "est": est or livro.get("estimado", False),
+        }
+
+    def _totais_exibicao(self, resumo: dict, moedas_dados: dict):
+        est = resumo.get("estimado", False)
+        if self.display_currency != "BRL":
+            return (resumo.get("investido_liquido", 0), resumo.get("nao_realizado"),
+                    resumo.get("realizado", 0), resumo.get("compras_historicas_usdt", 0), est)
+        metricas = [self._metricas(m, d) for m, d in moedas_dados.items()
+                    if m not in _LINHAS_CAIXA]
+        soma = lambda chave: (None if any(x[chave] is None for x in metricas)
+                              else sum(x[chave] for x in metricas))
+        totais_brl = (self._brl or {}).get("totais", {})
+        comprado = totais_brl.get("compras_historicas")
+        return (soma("custo"), soma("pl_nr"), soma("pl_r"),
+                None if comprado is None else float(comprado),
+                est or any(x["est"] for x in metricas))
+
     def _inserir_detalhe(self, moeda: str, dados: dict, idx: int):
         qtd = dados.get("quantidade_final", 0)
-        pmc = dados.get("pmc_final", 0)
-        custo = dados.get("custo_posicao_final", 0)
+        qtd = 0.0 if qtd < 1e-9 else qtd
         p_mkt = dados.get("preco_de_mercado")
         v_atual = dados.get("valor_atual_posicao")
-        pl_nr = dados.get("lucro_nao_realizado")
-        pl_r = dados.get("lucro_realizado", 0)
-        pl_tot = dados.get("lucro_total")
-        comprado_hist = dados.get("total_comprado_usdt", 0)
+        m = self._metricas(moeda, dados)
+        pmc, custo, pl_nr, pl_r, pl_tot = m["pmc"], m["custo"], m["pl_nr"], m["pl_r"], m["pl_tot"]
+        comprado_hist = m["comprado"]
         if pl_nr is None:
             str_pct = "Indisponível"
         elif custo is not None and custo > 0.000001:
@@ -656,14 +726,14 @@ class JanelaDistribuicao(ctk.CTkFrame):
             ]
             pos = True
         else:
-            est = dados.get("estimado", False)
+            est = m["est"]
             valores = [
-                moeda, f"{qtd:,.8f}", self._aprox(self._fmt_prc_historico(pmc), est),
+                moeda, f"{qtd:,.8f}", self._aprox(self._fmt_hist_prc(pmc), est),
                 self._fmt_prc(p_mkt),
-                self._aprox(self._fmt_val_historico(custo), est), self._fmt_val(v_atual),
-                self._aprox(self._fmt_val_historico(pl_nr), est),
-                self._aprox(self._fmt_val_historico(pl_r), est),
-                self._aprox(self._fmt_val_historico(pl_tot), est), self._aprox(str_pct, est),
+                self._aprox(self._fmt_hist(custo), est), self._fmt_val(v_atual),
+                self._aprox(self._fmt_hist(pl_nr), est),
+                self._aprox(self._fmt_hist(pl_r), est),
+                self._aprox(self._fmt_hist(pl_tot), est), self._aprox(str_pct, est),
             ]
             pos = pl_tot is not None and pl_tot >= 0
 

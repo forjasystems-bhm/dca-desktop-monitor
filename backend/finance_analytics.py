@@ -10,7 +10,7 @@ from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
-from backend.operation_integrity import venda_excede_posicao
+from backend.operation_integrity import TOL_QUANTIDADE, venda_excede_posicao
 
 
 class ErroAnaliseFinanceira(ValueError):
@@ -181,6 +181,8 @@ def calcular_analise_por_periodo(
             realizado = valor - taxa - custo_venda
             s["quantidade"] -= quantidade
             s["custo_aberto"] -= custo_venda
+            if abs(s["quantidade"]) <= TOL_QUANTIDADE:
+                s["quantidade"] = ZERO
             if s["quantidade"] <= ZERO:
                 s["custo_aberto"] = ZERO
             s["vendas_historicas"] += valor
