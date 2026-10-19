@@ -589,6 +589,9 @@ if __name__ == "__main__":
                 data_manager=data_mgr,
                 price_manager=price_mgr,
             )
+            if len(sys.argv)==3 and sys.argv[1]=='--distribution-self-test':
+                from backend.distribution_probe import schedule_probe
+                schedule_probe(root_principal,root_principal.app,sys.argv[2])
 
         JanelaSplash(root_principal, criar_app_callback=criar_app)
         root_principal.mainloop()

@@ -10,6 +10,8 @@ on:
       - 'main.pyw'
       - 'img/**'
       - 'tests/**'
+      - 'scripts/**'
+      - 'docs/RELEASE_V1_0_0.md'
       - 'requirements.txt'
       - '.github/workflows/release-packages.yml'
   push:
@@ -24,6 +26,8 @@ jobs:
     timeout-minutes: 35
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
@@ -32,7 +36,10 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt pyinstaller==6.16.0
       - name: Financial, UI and update regressions
-        run: python -m unittest discover -s tests -v
+        run: |
+          python -m unittest discover -s tests -v
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python tests/windows_gui_smoke.py
       - name: Package Windows application (real, no preview marker)
         shell: pwsh
         run: |
@@ -40,14 +47,16 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "Build Windows falhou" }
           if (!(Test-Path "dist/DCA-Monitor/DCA-Monitor.exe")) { throw "Sem executável" }
           if (Test-Path "dist/DCA-Monitor/DCA-PREVIEW-MODE") { throw "Prévia proibida" }
-      - name: Smoke test frozen executable in clean isolated wallet
+      - name: Build complete versioned Windows ZIP and checksum
+        run: python scripts/release_archive.py
+      - name: Extract final ZIP, verify Tcl/Tk, graceful exit and reopen
         run: python tests/frozen_release_smoke.py
-      - name: Build and checksum Windows ZIP
-        shell: pwsh
-        run: |
-          python -c "import shutil;shutil.make_archive('DCA-Monitor-v1.0.0-Windows-x64','zip','dist','DCA-Monitor')"
-          $digest=(Get-FileHash 'DCA-Monitor-v1.0.0-Windows-x64.zip' -Algorithm SHA256).Hash.ToLowerInvariant()
-          "$digest  DCA-Monitor-v1.0.0-Windows-x64.zip" | Set-Content 'DCA-Monitor-v1.0.0-Windows-x64.zip.sha256' -Encoding ascii
+      - name: Keep Windows acceptance receipt
+        uses: actions/upload-artifact@v4
+        with:
+          name: DCA-Acceptance-Windows
+          path: release-smoke-proof-Windows.json
+          if-no-files-found: error
       - uses: actions/upload-artifact@v4
         with:
           name: DCA-Monitor-Windows-x64
@@ -62,6 +71,8 @@ jobs:
     timeout-minutes: 35
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
@@ -78,12 +89,16 @@ jobs:
           python -m PyInstaller --noconfirm --clean --onedir --windowed --name DCA-Monitor --collect-all customtkinter --collect-all ttkthemes --collect-all pystray --add-data "config/config.json:config" --add-data "img/favicon.ico:img" --add-data "img/favicon.png:img" main.pyw
           test -x dist/DCA-Monitor/DCA-Monitor
           test ! -e dist/DCA-Monitor/DCA-PREVIEW-MODE
-      - name: Smoke test Linux executable with Xvfb and isolated data
+      - name: Build complete versioned Linux archive and checksum
+        run: python scripts/release_archive.py
+      - name: Extract final TAR, run real GUI, graceful exit and reopen
         run: xvfb-run -a python tests/frozen_release_smoke.py
-      - name: Build and checksum Linux archive
-        run: |
-          python -c "import shutil;shutil.make_archive('DCA-Monitor-v1.0.0-Linux-x64','gztar','dist','DCA-Monitor')"
-          sha256sum DCA-Monitor-v1.0.0-Linux-x64.tar.gz > DCA-Monitor-v1.0.0-Linux-x64.tar.gz.sha256
+      - name: Keep Linux acceptance receipt
+        uses: actions/upload-artifact@v4
+        with:
+          name: DCA-Acceptance-Linux
+          path: release-smoke-proof-Linux.json
+          if-no-files-found: error
       - uses: actions/upload-artifact@v4
         with:
           name: DCA-Monitor-Linux-x64
@@ -114,7 +129,8 @@ jobs:
           git merge-base --is-ancestor "$GITHUB_SHA" origin/main
           test -n "$APPROVED_SHA"
           test "$APPROVED_SHA" = "$GITHUB_SHA"
-          test "$GITHUB_REF" = "refs/tags/v1.0.0"
+          VERSION=$(python -c "from backend.app_lifecycle import APP_VERSION;print(APP_VERSION)")
+          test "$GITHUB_REF" = "refs/tags/v$VERSION"
       - uses: actions/download-artifact@v4
         with:
           name: DCA-Monitor-Windows-x64
@@ -136,4 +152,4 @@ jobs:
             echo 'Tag release already published; refusing to overwrite'
             exit 1
           fi
-          gh release create "$GITHUB_REF_NAME" dist/windows/* dist/linux/* --verify-tag --title "DCA Monitor 1.0.0" --notes "Windows e Linux. Dados persistentes fora da instalação. Atualizações voluntárias com download SHA-256. Relatórios BRL históricos exigem custo, taxas e câmbio documentados."
+          gh release create "$GITHUB_REF_NAME" dist/windows/* dist/linux/* --verify-tag --title "DCA Monitor 1.0.0" --notes "Windows e Linux. Instalação/rollback automáticos não suportados; preparação manual com backup recuperável. Dados persistentes fora da instalação. Atualizações voluntárias com download SHA-256. Relatórios BRL históricos exigem custo, taxas e câmbio documentados."
