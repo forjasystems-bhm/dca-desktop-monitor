@@ -471,8 +471,17 @@ class ArmazemSQLite:
         inputs, output = encode(insumos), encode(resultado)
         identity = hashlib.sha256(encode([data_utc, regras, inputs, output]).encode()).hexdigest()
         with closing(self._conectar()) as conn:
-            conn.execute("INSERT OR IGNORE INTO versoes_resultados (identidade,data_utc,regras,insumos_json,resultado_json,emitido_em_utc) VALUES (?,?,?,?,?,?)",
-                (identity,data_utc,regras,inputs,output,datetime.now(timezone.utc).isoformat()))
+            inserted = conn.execute(
+                "INSERT OR IGNORE INTO versoes_resultados "
+                "(identidade,data_utc,regras,insumos_json,resultado_json,emitido_em_utc) "
+                "VALUES (?,?,?,?,?,?)",
+                (identity,data_utc,regras,inputs,output,datetime.now(timezone.utc).isoformat())
+            ).rowcount == 1
+        # A newly issued result is an irreplaceable audit event. Protect its
+        # confirmed COMMIT like other financial writes (including opt-in mirror).
+        # An idempotent read of an existing version must not create new backups.
+        if inserted:
+            self._apos_gravacao()
         return identity
 
     def listar_versoes_resultados(self):
