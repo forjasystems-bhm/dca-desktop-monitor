@@ -14,7 +14,7 @@ from backend.historical_prices import validar_data_encerrada
 ZERO = Decimal("0")
 
 
-def patrimonio_historico_na_data(
+def _calcular_historico(
     armazem: Any, data_ref: date, *, hoje_utc: date | None = None
 ) -> dict:
     """Retorna patrimônios apenas quando TODOS os insumos estão disponíveis.
@@ -166,3 +166,30 @@ def patrimonio_historico_na_data(
             if lucro_nr is not None and lucro_realizado is not None else None
         ),
     }
+
+
+def patrimonio_historico_na_data(armazem, data_ref, *, hoje_utc=None):
+    """Issue an immutable version from ONE consistent SQLite read snapshot.
+
+    Existing restatement semantics remain unchanged. Prior issued results and
+    their exact inputs remain retrievable; no tax/accounting policy is inferred.
+    """
+    if not hasattr(armazem, "arquivo_db"):
+        return _calcular_historico(armazem,data_ref,hoje_utc=hoje_utc)
+    import tempfile, sqlite3
+    from pathlib import Path
+    from contextlib import closing
+    from backend.storage_sqlite import ArmazemSQLite
+    from backend.database_identity import REQUIRED
+    with tempfile.TemporaryDirectory(prefix="dca-result-") as folder:
+        path=Path(folder)/"portfolio.sqlite3"
+        with closing(sqlite3.connect(armazem.arquivo_db.resolve().as_uri()+"?mode=ro",uri=True)) as source:
+            with closing(sqlite3.connect(path)) as target:
+                source.backup(target)
+        snapshot=ArmazemSQLite(Path(folder),None,auto_importar_legado=False)
+        with closing(sqlite3.connect(path)) as conn:
+            inputs={table:conn.execute("SELECT * FROM "+table+" ORDER BY rowid").fetchall()
+                    for table in REQUIRED if table not in ("auditoria_operacoes","versoes_resultados")}
+        result=_calcular_historico(snapshot,data_ref,hoje_utc=hoje_utc)
+    result["versao_resultado"]=armazem.registrar_versao_resultado(data_ref.isoformat(),inputs,result)
+    return result

@@ -16,7 +16,7 @@ from datetime import datetime, timedelta, timezone
 from contextlib import closing
 from decimal import Decimal, InvalidOperation
 
-SCHEMA_VERSION = 9
+SCHEMA_VERSION = 10
 
 COLUNAS = ("Data", "Moeda", "Operacao", "Valor_USDT", "Preco", "Quantidade", "Taxa_BRL")
 CAMPO_FEE = "Taxa_Corretagem_USDT"
@@ -176,7 +176,7 @@ class ArmazemSQLite:
                 from backend.backup_sqlite import criar_backup_sqlite
                 criar_backup_sqlite(
                     self.arquivo_db, self.diretorio / "backups" / "sqlite",
-                    motivo=f"antes_schema_v{version}_para_v7",
+                    motivo=f"antes_schema_v{version}_para_v{SCHEMA_VERSION}",
                 )
         conn = self._conectar()
         try:
@@ -267,6 +267,12 @@ class ArmazemSQLite:
                 operador TEXT NOT NULL, alterado_em_utc TEXT NOT NULL)""")
             for action in ("UPDATE","DELETE"):
                 conn.execute(f"CREATE TRIGGER IF NOT EXISTS auditoria_operacoes_no_{action} BEFORE {action} ON auditoria_operacoes BEGIN SELECT RAISE(ABORT,'Auditoria imutável'); END")
+            conn.execute("""CREATE TABLE IF NOT EXISTS versoes_resultados (
+                id INTEGER PRIMARY KEY AUTOINCREMENT, identidade TEXT NOT NULL UNIQUE,
+                data_utc TEXT NOT NULL, regras TEXT NOT NULL, insumos_json TEXT NOT NULL,
+                resultado_json TEXT NOT NULL, emitido_em_utc TEXT NOT NULL)""")
+            for action in ("UPDATE", "DELETE"):
+                conn.execute(f"CREATE TRIGGER IF NOT EXISTS versoes_resultados_no_{action} BEFORE {action} ON versoes_resultados BEGIN SELECT RAISE(ABORT,'Versão emitida imutável'); END")
             conn.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
             conn.execute("COMMIT")
         except Exception:
@@ -426,46 +432,31 @@ class ArmazemSQLite:
                 "backup_sqlite": snapshot_path, "aviso_backup_sqlite": aviso,
                 "banco": str(self.arquivo_db)}
 
-    def informar_custo_inicial(self, moeda: str, custodia: str,
-                              custo_total_usdt: str) -> dict:
-        try:
-            custo = Decimal(str(custo_total_usdt))
-        except (InvalidOperation, ValueError, TypeError) as exc:
-            raise ErroArmazenamento("Custo total inválido.") from exc
-        if not custo.is_finite() or custo <= 0:
-            raise ErroArmazenamento("Informe custo total positivo e documentado em USDT.")
-        con = self._conectar()
-        try:
-            con.execute("BEGIN IMMEDIATE")
-            row = con.execute(
-                "SELECT id FROM posicoes_iniciais WHERE moeda=? AND custodia=?",
-                (moeda.strip().upper(), custodia.strip()),
-            ).fetchone()
-            if row is None:
-                raise ErroArmazenamento("Saldo inicial não encontrado.")
-            con.execute(
-                "UPDATE posicoes_iniciais SET custo_total_usdt=? WHERE id=?",
-                (str(custo), row[0]),
-            )
-            con.execute("COMMIT")
-        except Exception:
-            if con.in_transaction:
-                con.execute("ROLLBACK")
-            raise
-        finally:
-            con.close()
+    def informar_custo_inicial(self, moeda, custodia, custo_total_usdt, *, motivo=None):
+        # Compatibility entry point follows the same audited financial replay.
+        motivo = self._motivo_alteracao(motivo)
+        row = next((r for r in self.listar_posicoes_iniciais()
+                    if r["Moeda"] == moeda.upper() and r["Custodia"] == custodia), None)
+        if row is None:
+            raise ErroArmazenamento("Saldo inicial não encontrado.")
+        return self.corrigir_posicao(origem="inicial", moeda=moeda, custodia=custodia,
+            quantidade=row["Quantidade"], custo_total_usdt=custo_total_usdt, motivo=motivo)
 
-        try:
-            from backend.backup_sqlite import criar_backup_sqlite
-            snapshot = criar_backup_sqlite(
-                self.arquivo_db, self.diretorio / "backups" / "sqlite",
-                motivo="depois_custo_inicial",
-            )
-            return {"gravado": True, "backup_sqlite": snapshot["manifesto"],
-                    "aviso_backup_sqlite": None}
-        except Exception as exc:
-            return {"gravado": True, "backup_sqlite": None,
-                    "aviso_backup_sqlite": "Custo registrado, mas backup falhou: " + str(exc)}
+    def registrar_versao_resultado(self, data_utc, insumos, resultado):
+        regras = "DCA-F01-F17-v1; reexpressão atual preservada; sem decisão fiscal"
+        encode = lambda value: json.dumps(value, ensure_ascii=False, sort_keys=True,
+                                         separators=(",", ":"), default=str)
+        inputs, output = encode(insumos), encode(resultado)
+        identity = hashlib.sha256(encode([data_utc, regras, inputs, output]).encode()).hexdigest()
+        with closing(self._conectar()) as conn:
+            conn.execute("INSERT OR IGNORE INTO versoes_resultados (identidade,data_utc,regras,insumos_json,resultado_json,emitido_em_utc) VALUES (?,?,?,?,?,?)",
+                (identity,data_utc,regras,inputs,output,datetime.now(timezone.utc).isoformat()))
+        return identity
+
+    def listar_versoes_resultados(self):
+        with closing(self._conectar()) as conn:
+            rows=conn.execute("SELECT identidade,data_utc,regras,insumos_json,resultado_json,emitido_em_utc FROM versoes_resultados ORDER BY id").fetchall()
+        return [dict(identidade=r[0],data_utc=r[1],regras=r[2],insumos=json.loads(r[3]),resultado=json.loads(r[4]),emitido_em_utc=r[5]) for r in rows]
 
     @staticmethod
     def _validar_lote(moeda, quantidade, custodia, data_posicao, custo_total_usdt):

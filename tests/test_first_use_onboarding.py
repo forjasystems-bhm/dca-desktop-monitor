@@ -144,7 +144,7 @@ class PrimeiroUsoTests(unittest.TestCase):
         self.assertFalse(self.db.salvar_operacao(sale))
         self.assertIn("custo inicial", self.db.ultimo_erro)
         self.assertEqual(self.db.carregar_operacoes(), [])
-        self.db._store.informar_custo_inicial("BTC", "Ledger", "70")
+        self.db._store.informar_custo_inicial("BTC", "Ledger", "70", motivo="Comprovante sintético conferido")
         self.assertTrue(self.db.salvar_operacao(sale), self.db.ultimo_erro)
         p = AnalysisEngine.calcular_portfolio(
             self.db.carregar_operacoes(), {},
