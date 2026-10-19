@@ -368,8 +368,8 @@ class JanelaMoedas(ctk.CTkFrame):
             data["moedas"]       = self._moedas
             data["cores_moedas"] = self._cores
 
-            with path.open("w", encoding="utf-8") as f:
-                json.dump(data, f, indent=4, ensure_ascii=False)
+            from config.carregar_json import salvar_config
+            salvar_config(data)
 
             self._marcar_alterado(False)
             self._set_status(f"✓ Salvo! {len(self._moedas)} moedas ativas.", NEON_GREEN)
