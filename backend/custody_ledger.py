@@ -98,7 +98,8 @@ def apurar_custodia(saldos_externos, movimentos=(), *, ate: date | None = None):
             )
         base = source["custo"]
         custo_venda = None if base is None else base * qtd / source["quantidade"]
-        custo_fee = None if base is None else base * fee_coin / source["quantidade"]
+        custo_fee = (ZERO if fee_coin == ZERO else
+                     None if base is None else base * fee_coin / source["quantidade"])
         source["quantidade"] -= total_saida
         if base is not None:
             source["custo"] -= custo_venda + custo_fee
