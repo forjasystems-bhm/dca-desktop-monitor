@@ -6,6 +6,7 @@ import subprocess
 import tempfile
 import time
 import sqlite3
+from contextlib import closing
 
 root = Path(__file__).resolve().parent.parent
 is_win = platform.system() == "Windows"
@@ -25,7 +26,7 @@ with tempfile.TemporaryDirectory(prefix="dca-release-smoke-") as temp:
             if child.poll() is not None:
                 raise RuntimeError(f"Frozen app exited unexpectedly: {child.returncode}")
             if db.is_file() and db.stat().st_size>0:
-                with sqlite3.connect(db) as con:
+                with closing(sqlite3.connect(db)) as con:
                     result=con.execute("PRAGMA quick_check").fetchone()[0]
                     if result=="ok":
                         break
@@ -35,7 +36,7 @@ with tempfile.TemporaryDirectory(prefix="dca-release-smoke-") as temp:
         time.sleep(3)
         if child.poll() is not None:
             raise RuntimeError("Frozen app terminated after initial SQLite")
-        with sqlite3.connect(db) as con:
+        with closing(sqlite3.connect(db)) as con:
             assert con.execute("SELECT COUNT(*) FROM operacoes").fetchone()[0]==0
         print("RELEASE_FROZEN_STARTUP=PASS")
         print("RELEASE_FINANCIAL_DATA_ISOLATED=PASS")
