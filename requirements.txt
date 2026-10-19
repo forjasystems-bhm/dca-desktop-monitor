@@ -1,3 +1,7 @@
-ccxt
-ttkthemes
-customtkinter
+# Direct runtime versions verified by the Windows integration QA runner.
+# Update through a tested PR; never float dependencies in a user build.
+ccxt==4.5.88
+ttkthemes==3.3.0
+customtkinter==6.0.0
+pystray==0.19.5
+Pillow==12.3.0

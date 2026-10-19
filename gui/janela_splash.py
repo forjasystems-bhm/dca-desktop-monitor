@@ -195,6 +195,7 @@ class JanelaSplash:
         self._status_msg     = "Inicializando node..."
         self._animacao       = None
         self._app_construida = False
+        self._app_agendada = False
         self._block_height   = self._BLOCK_BASE + random.randint(0, 999)
         self._pulse_phase    = 0.0
 
@@ -357,7 +358,7 @@ class JanelaSplash:
 
         ctk.CTkLabel(
             inner,
-            text="Binance API  ·  SHA-256  ·  secp256k1",
+            text="Dados locais primeiro  ·  Cotações online opcionais",
             font=_F_MICRO,
             text_color=TEXT_SECONDARY,
             fg_color="transparent",
@@ -419,23 +420,18 @@ class JanelaSplash:
         self.splash.after(100, self._animar_card)
 
     def _carregar_dados(self):
+        """Abre sem rede; falha somente se os dados locais não forem confiáveis."""
         try:
-            self._status_msg = "Lendo banco de dados local..."
-            data_mgr = DataManager()
-
-            self._status_msg = "Conectando à Binance..."
-            price_mgr = PriceManager("binance")
-
-            self._status_msg = "Sincronizando cotações..."
-            price_mgr.atualizar_precos(MOEDAS_SUPORTADAS)
-
-            self._status_msg  = "Preparando interface..."
-            self.data_manager  = data_mgr
+            self._status_msg = "Verificando banco local e backups..."
+            from backend.local_startup import abrir_carteira_local
+            data_mgr, price_mgr = abrir_carteira_local()
+            self._status_msg = "Abrindo carteira local (sem depender da Binance)..."
+            self.data_manager = data_mgr
             self.price_manager = price_mgr
-            self.sucesso       = True
-        except Exception as e:
-            logger.exception("Falha durante carga inicial")
-            self._erro = str(e)
+            self.sucesso = True
+        except Exception as exc:
+            logger.exception("Falha ao abrir dados locais")
+            self._erro = str(exc)
 
     def _checar_progresso(self):
         try:
@@ -443,12 +439,15 @@ class JanelaSplash:
         except Exception:
             pass
 
-        if self.sucesso and not self._app_construida:
+        if self.sucesso and not self._app_agendada:
+            self._app_agendada = True
             try:
-                self.lbl_net_val.configure(text="online", text_color="#00c896")
+                self.lbl_net_val.configure(text="local", text_color="#00c896")
             except Exception:
                 pass
             self.splash.after(300, self._construir_app)
+            return
+        if self._app_agendada:
             return
 
         if self._erro is not None:
@@ -459,8 +458,8 @@ class JanelaSplash:
         if time.time() - self._start_time > TIMEOUT_SEGUNDOS:
             messagebox.showerror(
                 "Timeout",
-                f"Tempo limite de {TIMEOUT_SEGUNDOS}s excedido.\n"
-                "Verifique sua conexão e tente novamente.",
+                f"Tempo limite de {TIMEOUT_SEGUNDOS}s excedido ao carregar "
+                "os dados locais. Nenhum registro foi apagado.",
             )
             self._encerrar(sucesso=False)
             return

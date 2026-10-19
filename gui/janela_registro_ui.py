@@ -63,8 +63,17 @@ class JanelaRegistroUI(ctk.CTkFrame):
         self.columnconfigure(0, weight=1)
         self.rowconfigure(0, weight=1)
 
-        center = ctk.CTkFrame(self, fg_color="transparent")
-        center.grid(row=0, column=0)
+        # O formulário pode ultrapassar a altura útil após inclusão da
+        # corretagem opcional. Não esconder o botão confirmar: rolagem
+        # vertical da aba inteira, preservando a ficha central aprovada.
+        self._scroll_registro = ctk.CTkScrollableFrame(
+            self, fg_color="transparent",
+            scrollbar_button_color=BORDER,
+        )
+        self._scroll_registro.grid(row=0, column=0, sticky="nsew")
+
+        center = ctk.CTkFrame(self._scroll_registro, fg_color="transparent")
+        center.pack(anchor="center")
 
         self._build_card(center)
         self._build_footer(center)
@@ -73,7 +82,7 @@ class JanelaRegistroUI(ctk.CTkFrame):
         outer = ctk.CTkFrame(parent, fg_color=BG_CARD,
                              border_color=BORDER, border_width=1,
                              corner_radius=8)
-        outer.pack(pady=30, padx=40)
+        outer.pack(pady=(12, 12), padx=16)
 
         title_strip = ctk.CTkFrame(outer, fg_color=BG_INPUT,
                                    corner_radius=0, height=46,
@@ -89,7 +98,7 @@ class JanelaRegistroUI(ctk.CTkFrame):
                                       fill="both", expand=True)
 
         inner = ctk.CTkFrame(outer, fg_color="transparent")
-        inner.pack(padx=36, pady=24)
+        inner.pack(padx=24, pady=18)
 
         self._build_form(inner)
 
@@ -167,30 +176,36 @@ class JanelaRegistroUI(ctk.CTkFrame):
         self._entry_preco.configure(state="disabled")
         self._entry_preco.bind("<KeyRelease>", self._on_calcular)
 
-        label(8, "VALOR (USDT)")
+        self._lbl_valor_titulo = label(8, "VALOR (USDT)")
         self._entry_valor = entry(8)
         self._entry_valor.configure(state="disabled")
         self._entry_valor.bind("<KeyRelease>", self._on_calcular)
         self._lbl_quantidade = badge(8, TEXT_SECONDARY)
 
+        label(9, "TAXA CORRET. USDT")
+        self._entry_taxa_corretagem = entry(9)
+        self._entry_taxa_corretagem.configure(state="disabled")
+        self._lbl_taxa_info = badge(9, TEXT_SECONDARY)
+        self._lbl_taxa_info.configure(text="Opcional · deixe vazio se desconhecida")
+
         self._lbl_ajuda = ctk.CTkLabel(p, text="", font=_F_CARD_SUB,
                                        text_color=CYAN, anchor="w",
                                        width=360, justify="left")
-        self._lbl_ajuda.grid(row=9, column=1, columnspan=2,
+        self._lbl_ajuda.grid(row=10, column=1, columnspan=2,
                              sticky="w", pady=(4, 0))
 
         self._lbl_erro_saldo = ctk.CTkLabel(p, text="", font=_F_CARD_SUB,
                                             text_color=NEON_RED, anchor="w",
                                             width=360, justify="left")
-        self._lbl_erro_saldo.grid(row=10, column=1, columnspan=2,
+        self._lbl_erro_saldo.grid(row=11, column=1, columnspan=2,
                                   sticky="w", pady=(2, 4))
 
     def _build_footer(self, parent: ctk.CTkFrame):
         ctk.CTkFrame(parent, fg_color=BORDER, height=1,
-                     corner_radius=0).pack(fill="x", padx=40, pady=(0, 20))
+                     corner_radius=0).pack(fill="x", padx=28, pady=(0, 12))
 
         footer = ctk.CTkFrame(parent, fg_color="transparent")
-        footer.pack(pady=(0, 30))
+        footer.pack(pady=(0, 12))
 
         self._btn_salvar = ctk.CTkButton(
             footer,
@@ -224,6 +239,12 @@ class JanelaRegistroUI(ctk.CTkFrame):
 
     def get_valor_str(self) -> str:
         return self._entry_valor.get()
+
+    def get_taxa_corretagem_str(self) -> str:
+        return self._entry_taxa_corretagem.get().strip()
+
+    def set_taxa_corretagem_state(self, state: str) -> None:
+        self._entry_taxa_corretagem.configure(state=state)
 
     def get_preco_str(self) -> str:
         return self._entry_preco.get()
@@ -271,6 +292,9 @@ class JanelaRegistroUI(ctk.CTkFrame):
     def set_label_preco_titulo(self, text: str) -> None:
         self._lbl_preco_titulo.configure(text=text)
 
+    def set_label_valor_titulo(self, text: str) -> None:
+        self._lbl_valor_titulo.configure(text=text)
+
     def set_label_saldo(self, text: str, style: str = "Saldo.TLabel") -> None:
         cor = NEON_GREEN if "Saldo" in style else TEXT_SECONDARY
         self._lbl_saldo.configure(text=text, text_color=cor)
@@ -314,12 +338,16 @@ class JanelaRegistroUI(ctk.CTkFrame):
         self._entry_valor.delete(0, "end")
         self._entry_valor.configure(state="disabled")
 
+        self._entry_taxa_corretagem.configure(state="normal")
+        self._entry_taxa_corretagem.delete(0, "end")
+        self._entry_taxa_corretagem.configure(state="disabled")
         self._lbl_quantidade.configure(text="", text_color=TEXT_SECONDARY)
         self._lbl_preco_atual.configure(text="")
         self._lbl_saldo.configure(text="", text_color=NEON_GREEN)
         self._lbl_ajuda.configure(text="")
         self._lbl_erro_saldo.configure(text="")
         self._lbl_preco_titulo.configure(text="PRECO UNIT.")
+        self._lbl_valor_titulo.configure(text="VALOR (USDT)")
         self._btn_salvar.configure(state="disabled")
         self._lbl_status_btn.configure(
             text="preencha todos os campos", text_color=TEXT_MUTED)

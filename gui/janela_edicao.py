@@ -1,5 +1,6 @@
+from backend.ui_dispatch import UiDispatcher
 import tkinter as tk
-from tkinter import ttk, messagebox
+from tkinter import ttk, messagebox, simpledialog
 from decimal import Decimal, InvalidOperation
 from typing import Any, Callable, Optional
 import logging
@@ -43,6 +44,7 @@ class JanelaEdicao(ctk.CTkFrame):
         on_change: Optional[Callable] = None,
     ):
         super().__init__(parent, fg_color=BG_SURFACE)
+        self._tasks = UiDispatcher(self)
 
         self._data_manager    = data_manager
         self._price_manager   = price_manager
@@ -53,6 +55,7 @@ class JanelaEdicao(ctk.CTkFrame):
         self._mapa_indices: dict = {}
         self._op_original: Optional[dict] = None
         self._carregando = False
+        self._conciliando = False
 
         self._build_ui()
         self.after(100, self.atualizar)
@@ -198,18 +201,33 @@ class JanelaEdicao(ctk.CTkFrame):
             widget.grid(row=1, column=i, padx=10, sticky="ew")
             self._campos[col] = widget
 
+        ctk.CTkLabel(
+            form, text="Taxa corretagem (USDT) · opcional",
+            font=_f(_F_CARD_SUB), text_color=TEXT_SECONDARY,
+        ).grid(row=2, column=0, columnspan=2, sticky="e", padx=10, pady=(14, 4))
+        self._campo_corretagem = ctk.CTkEntry(
+            form, width=150, font=_f(_F_CARD_VAL),
+            fg_color=BG_INPUT, text_color=TEXT_PRIMARY, border_color=BORDER,
+        )
+        self._campo_corretagem.grid(
+            row=2, column=2, sticky="w", padx=10, pady=(14, 4)
+        )
+        ctk.CTkLabel(
+            form, text="Em branco = não informada; 0 = taxa confirmada zero",
+            font=_f(_F_CARD_SUB), text_color=TEXT_SECONDARY,
+        ).grid(row=2, column=3, columnspan=4, sticky="w", padx=8, pady=(14, 4))
+
     def _build_obs(self) -> None:
         obs = ctk.CTkFrame(self, fg_color="#1f1208", border_color="#7a4200", border_width=1)
         obs.pack(fill="x", padx=10, pady=(0, 4))
 
         linha1 = "⚠️  ATENÇÃO — EDIÇÃO MANUAL COM IMPACTO DIRETO NOS CÁLCULOS"
         linha2 = (
-            "O campo Moeda está bloqueado e não pode ser alterado: ele é usado diretamente pela API da Binance "
-            "para buscar cotações em tempo real — alterá-lo quebraria a busca de preços e corromperia todo o histórico "
-            "dessa posição. Caso precise corrigir a moeda, exclua a transação e registre-a novamente. "
-            "Os demais campos estão disponíveis para edição direta, porém Quantidade, Preço de Compra e Valor Total "
-            "são interdependentes: o sistema não recalcula automaticamente os demais ao alterar um deles. "
-            "Modificações inconsistentes entre esses valores comprometerão a precisão do DCA (Custo Médio) e do P&L realizado."
+            "A moeda da operação não pode ser modificada. Quantidade, Preço e Valor "
+            "são conferidos antes da gravação. Cada alteração ou exclusão também "
+            "revalida cronologicamente todos os saldos posteriores: vendas superiores "
+            "à posição e compras sem USDT serão recusadas. O CSV original permanece "
+            "preservado; divergências legadas exigem conciliação."
         )
 
         ctk.CTkLabel(
@@ -280,9 +298,6 @@ class JanelaEdicao(ctk.CTkFrame):
     def atualizar(self) -> None:
         if self._indice_editando is not None:
             return
-        if self._carregando:
-            return
-
         self._carregando = True
         self.lbl_status.configure(text="🔄 Carregando histórico...")
         self.btn_load.configure(state="disabled")
@@ -292,7 +307,7 @@ class JanelaEdicao(ctk.CTkFrame):
         for item in self._tree.get_children():
             self._tree.delete(item)
 
-        threading.Thread(target=self._worker_carregar_dados, daemon=True).start()
+        self._tasks.run(self._worker_carregar_dados)
 
     def _worker_carregar_dados(self) -> None:
         try:
@@ -306,13 +321,15 @@ class JanelaEdicao(ctk.CTkFrame):
                     return datetime.min
 
             ops_com_indice.sort(key=get_data_segura, reverse=True)
-            self.after(0, lambda: self._renderizar_tree(ops_com_indice))
+            self._tasks.post(lambda: self._renderizar_tree(ops_com_indice))
         except Exception as e:
             self._carregando = False
-            self.after(0, lambda: self.lbl_status.configure(text="⚠️ Erro ao carregar", text_color="red"))
+            self._tasks.post(lambda: self.lbl_status.configure(text="⚠️ Erro ao carregar", text_color="red"))
             logger.error(f"Erro no histórico: {e}")
 
     def _renderizar_tree(self, ops_com_indice: list) -> None:
+        if self._indice_editando is not None:
+            return
         self._carregando = False
         self._mapa_indices.clear()
 
@@ -350,15 +367,24 @@ class JanelaEdicao(ctk.CTkFrame):
             messagebox.showwarning("Aviso", "Selecione uma transação.")
             return
 
+        self.carregar_operacao(self._mapa_indices.get(selecao[0]))
+
+    def carregar_operacao(self, indice, *, conciliacao=False):
+        """Open the exact documented row from the reconciliation dialog."""
         self._limpar_form()
-        item = selecao[0]
-        self._indice_editando = self._mapa_indices.get(item)
-        valores = self._tree.item(item, "values")
+        self._indice_editando = indice
+        self._conciliando = conciliacao
+        self.btn_save.configure(state='normal')
+        self.btn_load.configure(state='normal')
 
-        operacoes = self._data_manager.carregar_operacoes()
-        self._op_original = operacoes[self._indice_editando]
+        self._op_original = self._data_manager.carregar_operacao_para_edicao(self._indice_editando)
 
-        for col, valor in zip(self._data_manager.headers, valores):
+        self._campo_corretagem.delete(0, "end")
+        fee = self._op_original.get("Taxa_Corretagem_USDT")
+        if fee is not None and str(fee).strip():
+            self._campo_corretagem.insert(0, str(fee))
+        for col in self._data_manager.headers:
+            valor = self._op_original.get(col, "")
             widget = self._campos[col]
 
             if isinstance(widget, ctk.CTkComboBox):
@@ -371,7 +397,7 @@ class JanelaEdicao(ctk.CTkFrame):
                 widget.configure(state="disabled")
             else:
                 widget.configure(state="normal")
-                valor_fmt = f"{float(valor):.2f}" if col == "Taxa_BRL" and valor != "" else valor
+                valor_fmt = str(valor)
                 widget.delete(0, "end")
                 widget.insert(0, valor_fmt)
 
@@ -387,7 +413,10 @@ class JanelaEdicao(ctk.CTkFrame):
             datetime.strptime(nova_data, "%Y-%m-%d %H:%M:%S")
 
             campo_taxa = self._campos.get("Taxa_BRL")
-            taxa_brl = round(float(campo_taxa.get().strip() or 0), 2) if campo_taxa else self._op_original.get("Taxa_BRL", 0.0)
+            from decimal import Decimal
+            taxa_brl = Decimal(campo_taxa.get().strip() or "0") if campo_taxa else Decimal(str(self._op_original.get("Taxa_BRL", "0")))
+            if not taxa_brl.is_finite():
+                raise ValueError("Câmbio não finito")
 
             if taxa_brl != 0 and taxa_brl <= 1.1:
                 messagebox.showerror(
@@ -409,14 +438,32 @@ class JanelaEdicao(ctk.CTkFrame):
                 else:
                     nova_op[col] = widget.get().strip()
 
-            nova_op["Taxa_BRL"] = taxa_brl
+            nova_op["Taxa_BRL"] = str(taxa_brl)
+            taxa_usdt = self._campo_corretagem.get().strip()
+            nova_op["Taxa_Corretagem_USDT"] = taxa_usdt or None
 
-            if self._data_manager.atualizar_operacao(self._indice_editando, nova_op):
+            motivo=simpledialog.askstring("Motivo da alteração","Descreva o motivo documentado (8 a 500 caracteres):",parent=self)
+            if motivo is None:return
+            if self._conciliando and not messagebox.askyesno(
+                'Confirmar conciliação',
+                'Confirmar os valores conferidos com o comprovante? O registro anterior e '
+                'o motivo serão preservados. Outras pendências não serão aprovadas.',parent=self):
+                return
+            save=(self._data_manager.conciliar_operacao if self._conciliando
+                  else self._data_manager.atualizar_operacao)
+            if save(self._indice_editando, nova_op,motivo=motivo):
                 messagebox.showinfo("Sucesso", "Transação atualizada com sucesso!")
+                self._avisar_backup()
                 self._indice_editando = None
                 self._op_original     = None
                 self._on_change()
                 self.atualizar()
+            else:
+                messagebox.showerror(
+                    "Alteração rejeitada",
+                    getattr(self._data_manager, "ultimo_erro", None)
+                    or "A alteração tornaria o histórico inconsistente."
+                )
 
         except ValueError:
             messagebox.showerror(
@@ -430,14 +477,25 @@ class JanelaEdicao(ctk.CTkFrame):
             return
 
         if messagebox.askyesno("Confirmar", "Tem certeza que deseja excluir?"):
-            if self._data_manager.excluir_operacao(self._indice_editando):
+            motivo=simpledialog.askstring("Motivo da exclusão","Descreva o motivo documentado (8 a 500 caracteres):",parent=self)
+            if motivo is None:return
+            if self._data_manager.excluir_operacao(self._indice_editando,motivo=motivo):
                 messagebox.showinfo("Sucesso", "Excluído com sucesso!")
+                self._avisar_backup()
                 self._indice_editando = None
                 self._op_original     = None
                 self._on_change()
                 self.atualizar()
+            else:
+                messagebox.showerror(
+                    "Exclusão rejeitada",
+                    getattr(self._data_manager, "ultimo_erro", None)
+                    or "Excluir este registro comprometeria saldos posteriores."
+                )
 
     def _limpar_form(self) -> None:
+        self._conciliando = False
+        self._campo_corretagem.delete(0, "end")
         for col, widget in self._campos.items():
             if isinstance(widget, ctk.CTkComboBox):
                 widget.configure(state="readonly")
@@ -451,3 +509,6 @@ class JanelaEdicao(ctk.CTkFrame):
                 widget.delete(0, "end")
         self._indice_editando = None
         self._op_original     = None
+    def _avisar_backup(self):
+        aviso=getattr(self._data_manager,"ultimo_aviso_backup",None)
+        if aviso:messagebox.showwarning("Gravação confirmada — backup pendente",aviso,parent=self)

@@ -10,7 +10,7 @@
 
 ## Visão Geral
 
-Este aplicativo foi criado para investidores de criptomoedas que buscam uma maneira simples e offline de gerenciar suas transações. Em vez de depender de planilhas complexas ou plataformas online, o Portfolio DCA Monitor salva seus dados localmente em um arquivo `CSV`, garantindo total privacidade e controle.
+Este aplicativo foi criado para investidores de criptomoedas que desejam acompanhar posições e operações localmente. A arquitetura em desenvolvimento mantém o banco operacional **SQLite**, preserva o CSV anterior como origem auditável e oferece um primeiro acesso explícito para importar operações ou declarar saldos já existentes em custódia.
 
 Ele busca preços em tempo real da Binance para fornecer uma análise precisa e atualizada do desempenho do seu portfólio.
 
@@ -18,8 +18,8 @@ Ele busca preços em tempo real da Binance para fornecer uma análise precisa e 
 
 *   **✍️ Registro de Transações:** Adicione operações de compra e venda de forma intuitiva.
 *   **📊 Análise Detalhada:** Visualize seu preço médio (PMC), custo total da posição, valor de mercado atual, e lucros/perdas realizados e não realizados para cada ativo.
-*   **💵 Conversão de Moeda:** Alterne a visualização de todos os valores monetários entre **USD** e **BRL** com um único clique.
-*   **📉 Taxas Realistas:** Aplica uma taxa de negociação de **0.1%** em cada operação, simulando as condições de uma exchange real.
+*   **💵 Conversão de Moeda:** Consulte patrimônio de mercado em USDT ou BRL quando houver câmbio atual; custos e lucros históricos **não** são convertidos retroativamente pelo câmbio do dia.
+*   **📉 Taxa de corretagem:** Campo opcional em USDT, sempre documentado; o sistema não presume 0,1% nem inventa taxas antigas.
 *   **🥧 Distribuição de Portfólio:** Entenda a alocação dos seus ativos com um resumo claro e uma representação visual em texto.
 *   **📋 Histórico Completo:** Todas as suas transações são listadas e podem ser facilmente consultadas.
 *   **✏️ Edição e Exclusão:** Corrija ou remova transações existentes diretamente pela interface.
@@ -33,8 +33,9 @@ Visão geral da interface, mostrando o DASHBOARD >>
 ## 🛠️ Tecnologias Utilizadas
 
 *   **Python 3**
-*   **Tkinter** para a interface gráfica (GUI).
-*   **ttkthemes** para modernizar o visual da aplicação.
+*   **CustomTkinter/Tkinter** para a interface desktop.
+*   **SQLite** para histórico financeiro, auditoria, dados locais e backups.
+*   **pystray/Pillow** para bandeja opcional do Windows.
 *   **CCXT** para integração com a API da Binance e busca de preços.
 
 ## 📁 Estrutura do Projeto
@@ -76,6 +77,10 @@ dca-desktop-monitor/
     └── combo_custom.py             # Combobox customizado
 ```
 
+## ⚙️ Ambiente de desenvolvimento (NÃO é instalador homologado)
+
+> **A versão integrada ainda não foi publicada para primeiro download.** Não instale um preview como versão operacional nem migre o único CSV real. Leia [Primeiro uso e migração](docs/PRIMEIRO_USO_E_MIGRACAO.md) antes de testar dados reais em cópias.
+
 ## ⚙️ Instalação e Execução
 
 Siga os passos abaixo para executar o projeto em sua máquina local.
@@ -88,7 +93,7 @@ Siga os passos abaixo para executar o projeto em sua máquina local.
 
 1.  **Clone o repositório:**
     ```bash
-    git clone https://github.com/BRUNO1993-CIBER/dca-desktop-monitor.git
+    git clone https://github.com/tiolusystems/dca-desktop-monitor.git
     cd dca-desktop-monitor
     ```
 
@@ -113,27 +118,25 @@ Siga os passos abaixo para executar o projeto em sua máquina local.
     ```bash
     python main.pyw
     ```
-    Na primeira execução, um arquivo chamado `meu_diario_operacoes.csv` será criado automaticamente para armazenar suas transações.
+    Na primeira execução, o aplicativo cria um SQLite local e oferece escolher o CSV antigo, declarar saldos existentes ou iniciar vazio. Não cria operações fictícias nem regrava o CSV original.
 
-### 🖥️ Criar Atalho no Sistema (Opcional)
+### 🖥️ Recursos Windows — ainda sem distribuição
 
-Após instalar as dependências, você pode criar um atalho clicável no seu sistema operacional para abrir o app sem precisar do terminal.
+O painel **Aplicativo / Configurações** prepara os seguintes recursos: verificar versões estáveis pelo canal oficial, criar atalho da versão **instalada** (não preview), optar por manter o monitor na bandeja do Windows e verificar/preparar uma restauração SQLite.
 
-Com o ambiente virtual **ativado**, execute:
+**O instalador e o atualizador de executáveis não estão publicados nem habilitados.** O botão **Atualizar agora** permanece desabilitado até que um pacote autêntico, assinado ou validado por uma cadeia de confiança aprovada, esteja disponível e a homologação tenha ocorrido.
 
-```bash
-python config/install.py
-```
+Scripts de desenvolvimento (`config/install.py`) não substituem a instalação Windows gerenciada. Não se deve distribuir um atalho que aponte para um checkout temporário ou pasta de testes.
 
-**Windows** — cria um atalho `.lnk` na Área de Trabalho com o ícone do app:
-- Clique duplo no atalho para abrir
-- Para fixar na barra de tarefas: clique direito no atalho → **Fixar na barra de tarefas**
+## 📚 Gates de pré-homologação
 
-**Linux** — cria uma entrada `.desktop` no menu de aplicativos (`~/.local/share/applications/`):
-- Procure por **Portfolio DCA Monitor** no menu de aplicativos
-- Para fixar no dock: clique direito → **Adicionar aos favoritos** (GNOME/KDE)
+- [Migração e primeiro uso](docs/PRIMEIRO_USO_E_MIGRACAO.md)
+- [Conciliação, custódia e recuperação](docs/PRE01_CONCILIACAO_RECUPERACAO.md)
+- [Controles desktop](docs/DESK01_CONTROLES_WINDOWS.md)
+- [Contrato financeiro e prioridades — PR #3](https://github.com/tiolusystems/dca-desktop-monitor/pull/3)
+- [Teste pré-CSV em andamento](docs/QA02_PRE_HOMOLOGACAO.md)
 
-> **Importante:** execute o script com o ambiente virtual ativado para que o atalho aponte para o Python correto com todas as dependências instaladas.
+**Não importar o único CSV real nem disponibilizar executável antes de concluir a homologação em uma cópia.**
 
 ## 📜 Licença
 

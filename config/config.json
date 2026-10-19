@@ -9,7 +9,8 @@
         "UNI",
         "NEAR",
         "SUI",
-        "USDT"
+        "USDT",
+        "USDC"
     ],
     "cores_moedas": {
         "ETH": "#627eea",
@@ -21,6 +22,7 @@
         "NEAR": "#00c08b",
         "SUI": "#4da2ff",
         "USDT": "#26a17b",
+        "USDC": "#2775ca",
         "BTC": "#ff5406"
     },
     "exchange": "binance",
