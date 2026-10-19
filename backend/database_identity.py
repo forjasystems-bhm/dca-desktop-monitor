@@ -13,6 +13,7 @@ REQUIRED = {
     'posicoes_externas': {'id','data_posicao','moeda','quantidade','custodia','custo_total_usdt'},
     'ajustes_posicoes': {'antes_json','depois_json','motivo','alterado_em_utc'},
     'movimentacoes_custodia': {'id','data_utc','tipo','moeda','origem','destino','quantidade','taxa_ativo','receita_usdt','taxa_usdt','comando_id'},
+    'auditoria_operacoes': {'operacao_id','acao','antes_json','depois_json','motivo','operador','alterado_em_utc'},
     'identidade_carteira': {'id','uuid'},
 }
 

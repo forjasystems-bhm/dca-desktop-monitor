@@ -91,7 +91,7 @@ class StablecoinsTests(unittest.TestCase):
     def test_excluir_entrada_usdc_que_sustenta_saque_e_bloqueado(self):
         self.assertTrue(self.depositar("USDC", "100"))
         self.assertTrue(self.sacar("USDC", "80"))
-        self.assertFalse(self.dm.excluir_operacao(0))
+        self.assertFalse(self.dm.excluir_operacao(0, motivo="Justificativa sintética do teste"))
         self.assertIn("USDC", self.dm.ultimo_erro)
         self.assertEqual(len(self.dm.carregar_operacoes()), 2)
 

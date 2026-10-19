@@ -118,14 +118,14 @@ class DataManager:
             logger.exception("Falha ao %s; transação revertida", descricao)
             return False
 
-    def excluir_operacao(self, indice: int) -> bool:
+    def excluir_operacao(self, indice: int, *, motivo=None) -> bool:
         return self._executar_mutacao(
-            "excluir", lambda: self._store.excluir(indice)
+            "excluir", lambda: self._store.excluir(indice,motivo=motivo)
         )
 
-    def atualizar_operacao(self, indice: int, nova_operacao: Dict) -> bool:
+    def atualizar_operacao(self, indice: int, nova_operacao: Dict, *, motivo=None) -> bool:
         return self._executar_mutacao(
-            "alterar", lambda: self._store.substituir(indice, nova_operacao)
+            "alterar", lambda: self._store.substituir(indice, nova_operacao,motivo=motivo)
         )
 
     def salvar_operacao(self, operacao: List) -> bool:

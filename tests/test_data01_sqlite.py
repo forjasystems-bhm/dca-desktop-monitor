@@ -85,10 +85,10 @@ class Data01Tests(unittest.TestCase):
         nova = dict(d.carregar_operacoes()[0])
         nova["Valor_USDT"] = "120"
         nova["Preco"] = "1200"
-        self.assertTrue(d.atualizar_operacao(0, nova))
+        self.assertTrue(d.atualizar_operacao(0, nova, motivo="Justificativa sintética do teste"))
         self.assertEqual(d.carregar_operacoes()[0]["Valor_USDT"], 120)
-        self.assertTrue(d.excluir_operacao(1))
-        self.assertFalse(d.excluir_operacao(99))
+        self.assertTrue(d.excluir_operacao(1, motivo="Justificativa sintética do teste"))
+        self.assertFalse(d.excluir_operacao(99, motivo="Justificativa sintética do teste"))
         self.assertTrue(d.salvar_operacao([
             "2026-01-03 10:00:00", "ETH", "compra", 25, 250, 0.1, 5.3
         ]))
@@ -102,7 +102,7 @@ class Data01Tests(unittest.TestCase):
         d = self.app()
         original = d.carregar_operacoes()
         row = {**original[0], "Quantidade": "NaN"}
-        self.assertFalse(d.atualizar_operacao(0, row))
+        self.assertFalse(d.atualizar_operacao(0, row, motivo="Justificativa sintética do teste"))
         self.assertEqual(d.carregar_operacoes(), original)
 
     def test_importacao_manual_aceita_so_banco_vazio(self):

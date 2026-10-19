@@ -61,7 +61,7 @@ def main():
         ])
         assert "venda superior" in dm.ultimo_erro
         assert dm.carregar_operacoes_precisas() == anterior
-        assert not dm.excluir_operacao(0), "Remover o aporte deve invalidar compras."
+        assert not dm.excluir_operacao(0, motivo="Justificativa sintética do teste"), "Remover o aporte deve invalidar compras."
         assert "saldo USDT negativo" in dm.ultimo_erro
         assert dm.carregar_operacoes_precisas() == anterior
         print("GUI_FIN03_VALIDACAO_E_ROLLBACK=PASS")

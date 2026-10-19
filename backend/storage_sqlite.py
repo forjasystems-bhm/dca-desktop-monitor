@@ -16,7 +16,7 @@ from datetime import datetime, timedelta, timezone
 from contextlib import closing
 from decimal import Decimal, InvalidOperation
 
-SCHEMA_VERSION = 8
+SCHEMA_VERSION = 9
 
 COLUNAS = ("Data", "Moeda", "Operacao", "Valor_USDT", "Preco", "Quantidade", "Taxa_BRL")
 CAMPO_FEE = "Taxa_Corretagem_USDT"
@@ -261,6 +261,12 @@ class ArmazemSQLite:
             )
             conn.execute("CREATE TABLE IF NOT EXISTS identidade_carteira (id INTEGER PRIMARY KEY CHECK(id=1), uuid TEXT NOT NULL UNIQUE)")
             conn.execute("INSERT OR IGNORE INTO identidade_carteira VALUES (1,?)", (str(uuid4()),))
+            conn.execute("""CREATE TABLE IF NOT EXISTS auditoria_operacoes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT, operacao_id INTEGER NOT NULL,
+                acao TEXT NOT NULL, antes_json TEXT, depois_json TEXT, motivo TEXT NOT NULL,
+                operador TEXT NOT NULL, alterado_em_utc TEXT NOT NULL)""")
+            for action in ("UPDATE","DELETE"):
+                conn.execute(f"CREATE TRIGGER IF NOT EXISTS auditoria_operacoes_no_{action} BEFORE {action} ON auditoria_operacoes BEGIN SELECT RAISE(ABORT,'Auditoria imutável'); END")
             conn.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
             conn.execute("COMMIT")
         except Exception:
@@ -1043,7 +1049,28 @@ class ArmazemSQLite:
         finally:
             con.close()
 
-    def substituir(self, indice: int, valores: dict) -> bool:
+    @staticmethod
+    def _auditar_operacao(con, codigo, acao, antes, depois, motivo):
+        import getpass
+        con.execute("INSERT INTO auditoria_operacoes (operacao_id,acao,antes_json,depois_json,motivo,operador,alterado_em_utc) VALUES (?,?,?,?,?,?,?)",
+            (codigo,acao,json.dumps(antes,ensure_ascii=False) if antes is not None else None,
+             json.dumps(depois,ensure_ascii=False) if depois is not None else None,
+             motivo,getpass.getuser(),datetime.now(timezone.utc).isoformat()))
+
+    def listar_auditoria_operacoes(self):
+        with closing(self._conectar()) as conn:
+            rows=conn.execute("SELECT operacao_id,acao,antes_json,depois_json,motivo,operador,alterado_em_utc FROM auditoria_operacoes ORDER BY id").fetchall()
+        return [{"operacao_id":r[0],"acao":r[1],"antes":json.loads(r[2]) if r[2] else None,
+                 "depois":json.loads(r[3]) if r[3] else None,"motivo":r[4],"operador":r[5],"data":r[6]} for r in rows]
+
+    @staticmethod
+    def _motivo_alteracao(motivo):
+        if not isinstance(motivo,str) or not 8<=len(motivo.strip())<=500:
+            raise ErroArmazenamento("Motivo documentado obrigatório (8 a 500 caracteres).")
+        return motivo.strip()
+
+    def substituir(self, indice: int, valores: dict, *, motivo=None) -> bool:
+        motivo=self._motivo_alteracao(motivo)
         row = _validar(valores, indice + 2)
         self._conferir_origem()
         con = self._conectar()
@@ -1061,12 +1088,14 @@ class ArmazemSQLite:
                     "A moeda de uma operação existente não pode ser alterada. "
                     "Exclua e registre novamente após verificar os saldos."
                 )
+            anterior=dict(livro[indice])
             livro[indice] = row
             validar_livro(livro, self._saldos_transacionais(con))
             con.execute(
                 "UPDATE operacoes SET data=?, moeda=?, operacao=?, valor_usdt=?, "
                 "preco=?, quantidade=?, taxa_brl=?, taxa_corretagem_usdt=? WHERE id=?",
                 tuple(row[campo] for campo in COLUNAS) + (row.get(CAMPO_FEE), id_operacao,))
+            self._auditar_operacao(con,id_operacao,"alteracao",anterior,row,motivo)
             con.execute("COMMIT")
             self._apos_gravacao()
             return True
@@ -1077,7 +1106,8 @@ class ArmazemSQLite:
         finally:
             con.close()
 
-    def excluir(self, indice: int) -> bool:
+    def excluir(self, indice: int, *, motivo=None) -> bool:
+        motivo=self._motivo_alteracao(motivo)
         self._conferir_origem()
         con = self._conectar()
         try:
@@ -1088,9 +1118,11 @@ class ArmazemSQLite:
                 return False
             from backend.operation_integrity import validar_livro
             livro = self._livro_transacional(con)
+            anterior=dict(livro[indice])
             del livro[indice]
             validar_livro(livro, self._saldos_transacionais(con))
             con.execute("DELETE FROM operacoes WHERE id=?", (id_operacao,))
+            self._auditar_operacao(con,id_operacao,"exclusao",anterior,None,motivo)
             con.execute("COMMIT")
             self._apos_gravacao()
             return True

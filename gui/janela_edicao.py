@@ -1,5 +1,5 @@
 import tkinter as tk
-from tkinter import ttk, messagebox
+from tkinter import ttk, messagebox, simpledialog
 from decimal import Decimal, InvalidOperation
 from typing import Any, Callable, Optional
 import logging
@@ -435,7 +435,9 @@ class JanelaEdicao(ctk.CTkFrame):
             taxa_usdt = self._campo_corretagem.get().strip()
             nova_op["Taxa_Corretagem_USDT"] = taxa_usdt or None
 
-            if self._data_manager.atualizar_operacao(self._indice_editando, nova_op):
+            motivo=simpledialog.askstring("Motivo da alteração","Descreva o motivo documentado (8 a 500 caracteres):",parent=self)
+            if motivo is None:return
+            if self._data_manager.atualizar_operacao(self._indice_editando, nova_op,motivo=motivo):
                 messagebox.showinfo("Sucesso", "Transação atualizada com sucesso!")
                 self._indice_editando = None
                 self._op_original     = None
@@ -460,7 +462,9 @@ class JanelaEdicao(ctk.CTkFrame):
             return
 
         if messagebox.askyesno("Confirmar", "Tem certeza que deseja excluir?"):
-            if self._data_manager.excluir_operacao(self._indice_editando):
+            motivo=simpledialog.askstring("Motivo da exclusão","Descreva o motivo documentado (8 a 500 caracteres):",parent=self)
+            if motivo is None:return
+            if self._data_manager.excluir_operacao(self._indice_editando,motivo=motivo):
                 messagebox.showinfo("Sucesso", "Excluído com sucesso!")
                 self._indice_editando = None
                 self._op_original     = None

@@ -107,7 +107,7 @@ class FinancialFeesTests(unittest.TestCase):
         self.assertEqual(x["taxas_registradas_usdt"], Decimal("0"))
         row = self.dm.carregar_operacoes_precisas()[1]
         row["Taxa_Corretagem_USDT"] = "0"
-        self.assertTrue(self.dm.atualizar_operacao(1, row))
+        self.assertTrue(self.dm.atualizar_operacao(1, row, motivo="Justificativa sintética do teste"))
         x = calcular_analise_por_periodo(self.dm.carregar_operacoes_precisas())
         self.assertEqual(x["operacoes_sem_taxa_documentada"], 0)
 
@@ -116,7 +116,7 @@ class FinancialFeesTests(unittest.TestCase):
         self.assertTrue(self.compra("0"))
         initial = self.dm.carregar_operacoes_precisas()
         changed = dict(initial[1], Taxa_Corretagem_USDT="1")
-        self.assertFalse(self.dm.atualizar_operacao(1, changed))
+        self.assertFalse(self.dm.atualizar_operacao(1, changed, motivo="Justificativa sintética do teste"))
         self.assertEqual(initial, self.dm.carregar_operacoes_precisas())
 
     def test_transfer_fx_not_brokerage_and_stable_fee_prohibited(self):

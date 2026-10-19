@@ -99,7 +99,7 @@ class Fin03Tests(unittest.TestCase):
         self.assertTrue(self.compra())
         self.assertTrue(self.venda())
         original = self.db.carregar_operacoes()
-        self.assertFalse(self.db.excluir_operacao(1))
+        self.assertFalse(self.db.excluir_operacao(1, motivo="Justificativa sintética do teste"))
         self.assertIn("venda superior", self.db.ultimo_erro)
         self.assertEqual(self.db.carregar_operacoes(), original)
 
@@ -107,7 +107,7 @@ class Fin03Tests(unittest.TestCase):
         self.assertTrue(self.deposito())
         self.assertTrue(self.compra())
         original = self.db.carregar_operacoes()
-        self.assertFalse(self.db.excluir_operacao(0))
+        self.assertFalse(self.db.excluir_operacao(0, motivo="Justificativa sintética do teste"))
         self.assertIn("saldo USDT negativo", self.db.ultimo_erro)
         self.assertEqual(self.db.carregar_operacoes(), original)
 
@@ -119,7 +119,7 @@ class Fin03Tests(unittest.TestCase):
         row = dict(original[1])
         row["Quantidade"] = "0.005"
         row["Valor_USDT"] = "250"
-        self.assertFalse(self.db.atualizar_operacao(1, row))
+        self.assertFalse(self.db.atualizar_operacao(1, row, motivo="Justificativa sintética do teste"))
         self.assertIn("venda superior", self.db.ultimo_erro)
         self.assertEqual(self.db.carregar_operacoes_precisas(), original)
 
@@ -129,7 +129,7 @@ class Fin03Tests(unittest.TestCase):
         original = self.db.carregar_operacoes_precisas()
         row = dict(original[0])
         row["Data"] = "2026-01-04 09:00:00"
-        self.assertFalse(self.db.atualizar_operacao(0, row))
+        self.assertFalse(self.db.atualizar_operacao(0, row, motivo="Justificativa sintética do teste"))
         self.assertIn("saldo USDT negativo", self.db.ultimo_erro)
         self.assertEqual(self.db.carregar_operacoes_precisas(), original)
 
@@ -138,7 +138,7 @@ class Fin03Tests(unittest.TestCase):
         self.assertTrue(self.compra())
         row = dict(self.db.carregar_operacoes_precisas()[1])
         row["Moeda"] = "ETH"
-        self.assertFalse(self.db.atualizar_operacao(1, row))
+        self.assertFalse(self.db.atualizar_operacao(1, row, motivo="Justificativa sintética do teste"))
         self.assertIn("moeda", self.db.ultimo_erro.lower())
         self.assertEqual(self.db.carregar_operacoes_precisas()[1]["Moeda"], "BTC")
 
@@ -148,7 +148,7 @@ class Fin03Tests(unittest.TestCase):
         self.assertTrue(self.venda())
         row = dict(self.db.carregar_operacoes_precisas()[1])
         row.update({"Preco": "45000", "Valor_USDT": "450"})
-        self.assertTrue(self.db.atualizar_operacao(1, row))
+        self.assertTrue(self.db.atualizar_operacao(1, row, motivo="Justificativa sintética do teste"))
         result = calcular_analise_por_periodo(self.db.carregar_operacoes_precisas())
         self.assertEqual(result["ativos"]["BTC"]["realizado_historico"], Decimal("150"))
 
@@ -156,7 +156,7 @@ class Fin03Tests(unittest.TestCase):
         self.assertTrue(self.deposito())
         self.assertTrue(self.compra())
         self.assertTrue(self.venda())
-        self.assertTrue(self.db.excluir_operacao(2))
+        self.assertTrue(self.db.excluir_operacao(2, motivo="Justificativa sintética do teste"))
         outra = DataManager(legacy_csv=self.root / "arquivo-inexistente.csv",
                            data_dir=self.root / "dados")
         result = calcular_analise_por_periodo(outra.carregar_operacoes_precisas())
