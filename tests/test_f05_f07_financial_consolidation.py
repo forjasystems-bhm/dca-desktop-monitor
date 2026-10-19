@@ -22,3 +22,11 @@ class TransferFeeTests(unittest.TestCase):
                     saldos_externos=OPEN,movimentos_custodia=movements)
         self.assertEqual(Decimal(str(p['totais']['realizado'])), h['lucro_custodia_usdt'])
         self.assertEqual(p['totais']['realizado'], -1)
+
+class UnknownRealizedTests(unittest.TestCase):
+    def test_f06_unknown_sale_basis_is_unavailable_not_zero(self):
+        opening=[dict(OPEN[0],Custo_Total_USDT=None)]
+        p=AnalysisEngine.calcular_portfolio([],{'BTC':100},saldos_externos=opening,
+             movimentos_custodia=[event(Tipo='venda',Taxa_Ativo='0',Receita_USDT='20')])
+        self.assertIsNone(p['totais']['realizado'])
+        self.assertEqual(p['totais']['realizado_csv'],0)

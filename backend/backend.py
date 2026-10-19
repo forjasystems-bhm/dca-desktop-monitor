@@ -422,8 +422,11 @@ class AnalysisEngine:
             else:
                 totais["valor_atual"] += float(ext["q"]) * spot
 
+        totais["realizado_csv"] = totais["realizado"]
         if custodia["lucro_vendas_externas_usdt"] is not None:
             totais["realizado"] += totais["resultado_custodia_usdt"]
+        else:
+            totais["realizado"] = None
         if saldo_usdc > 0:
             preco_usdc = AnalysisEngine._preco_disponivel(precos_atuais.get("USDC"))
             valor_usdc = float(saldo_usdc * Decimal(str(preco_usdc))) if preco_usdc is not None else None

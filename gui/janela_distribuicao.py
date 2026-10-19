@@ -458,7 +458,7 @@ class JanelaDistribuicao(ctk.CTkFrame):
         tot_val = resumo.get("valor_atual")
         tot_pl_nr = resumo.get("nao_realizado")
         tot_pl_r = resumo.get("realizado", 0)
-        tot_pl = None if tot_pl_nr is None else tot_pl_nr + tot_pl_r
+        tot_pl = None if tot_pl_nr is None or tot_pl_r is None else tot_pl_nr + tot_pl_r
         pct_nr = (
             tot_pl_nr / tot_custo * 100 if tot_pl_nr is not None
             and tot_custo > 0.000001 else None
@@ -469,7 +469,7 @@ class JanelaDistribuicao(ctk.CTkFrame):
         pct_total = float(retorno_estimado) if retorno_estimado is not None else None
         cor_pl = TEXT_MUTED if tot_pl is None else NEON_GREEN if tot_pl >= 0 else NEON_RED
         cor_nr = TEXT_MUTED if tot_pl_nr is None else NEON_GREEN if tot_pl_nr >= 0 else NEON_RED
-        cor_r = NEON_GREEN if tot_pl_r >= 0 else NEON_RED
+        cor_r = TEXT_MUTED if tot_pl_r is None else NEON_GREEN if tot_pl_r >= 0 else NEON_RED
         cor_retorno = TEXT_MUTED if pct_total is None else NEON_GREEN if pct_total >= 0 else NEON_RED
 
         self._lbl_patrimonio.configure(text=self._fmt_val(tot_val))
