@@ -60,7 +60,8 @@ def _calcular_historico(
                 None if ativo in analise["ativos_sem_custo"] else valor - custo
             )
             mercado_aberto += valor
-            custo_aberto += custo
+            if custo is not None:
+                custo_aberto += custo
         else:
             valor = ZERO
             nao_realizado = ZERO
@@ -113,6 +114,8 @@ def _calcular_historico(
             caixa += -(valor + taxa) if tipo == "compra" else valor - taxa
 
     alertas = []
+    if analise.get('pendencias_conciliacao'):
+        alertas.append('Operações não conciliadas: patrimônio e resultado consolidados não comprovados.')
     if ausentes:
         alertas.append(
             "Faltam fechamentos históricos UTC em: " + ", ".join(sorted(ausentes))

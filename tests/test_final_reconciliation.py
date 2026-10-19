@@ -32,10 +32,12 @@ class FinalReconciliationTests(unittest.TestCase):
         self.assertEqual(result['ativos']['BTC']['realizado_historico'],Decimal('50'))
         self.assertIsNone(result['totais']['realizado_historico'])
         self.assertTrue(result['pendencias_conciliacao'])
+        self.assertIsNone(result['ativos']['UNI']['custo_aberto'])
         current=AnalysisEngine.calcular_portfolio(self.rows(),{'UNI':11,'BTC':150})
         self.assertIsNone(current['UNI']['lucro_realizado'])
         self.assertEqual(current['BTC']['lucro_realizado'],50)
         self.assertIsNone(current['totais']['realizado'])
+        self.assertIsNone(current['totais']['valor_atual'])
 
     def test_future_pending_operation_does_not_invalidate_earlier_cut(self):
         early=calcular_analise_por_periodo(self.rows(),fim='2026-01-01')

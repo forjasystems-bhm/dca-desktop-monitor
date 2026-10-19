@@ -502,6 +502,9 @@ class AnalysisEngine:
             totais['realizado_csv']=None
             totais['nao_realizado']=None
             totais['base_de_custo_incompleta']=True
+            totais['investido_liquido']=None
+            totais['avaliacao_completa']=False
+            totais['valor_atual']=None
         totais['pendencias_conciliacao']=pendencias
         resultado["totais"] = totais
         return resultado

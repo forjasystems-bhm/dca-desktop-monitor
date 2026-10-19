@@ -233,6 +233,7 @@ def calcular_analise_por_periodo(
         if coin in ativos:
             bases_desconhecidas.add(coin)
             ativos[coin]['conciliado']=False
+            ativos[coin]['custo_aberto']=None
             for field in ('realizado_historico','realizado_periodo',
                           'realizado_csv_historico','realizado_csv_periodo'):
                 ativos[coin][field]=None
