@@ -1,0 +1,78 @@
+name: Windows downloadable homologation preview
+
+on:
+  pull_request:
+    branches:
+      - fix/dca-review-gaps-preintegration
+    paths:
+      - '.github/workflows/windows-homologation-preview.yml'
+      - 'backend/distribution_policy.py'
+      - 'tests/test_distribution_policy.py'
+      - 'tests/windows_frozen_preview_smoke.py'
+      - 'docs/HOMOLOGACAO_PREVIEW_DOWNLOAD.md'
+
+permissions:
+  contents: read
+
+jobs:
+  personal-preview:
+    if: ${{ github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'test/dca-windows-download-preview' }}
+    runs-on: windows-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout candidate and preview policy
+        uses: actions/checkout@v4
+      - name: Check locked financial candidate
+        shell: pwsh
+        run: |
+          if ("${{ github.event.pull_request.base.sha }}" -ne "8c13295aaac2ac4bcb98ead1723e713a8ae42eb2") {
+            throw "Candidato financeiro mudou; nova autorização e validação necessárias."
+          }
+          if ("${{ github.event.pull_request.head.ref }}" -ne "test/dca-windows-download-preview") {
+            throw "Branch não autorizada para homologação pessoal."
+          }
+      - name: Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install and pin Windows packaging dependencies
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt pyinstaller==6.16.0
+      - name: Full financial and distribution policy regressions
+        shell: pwsh
+        run: python -m unittest discover -s tests -v
+      - name: Assemble unsigned portable preview (no installer or release)
+        shell: pwsh
+        run: |
+          python -m PyInstaller --noconfirm --clean --onedir --windowed --name DCA-Monitor-PREVIEW --icon img/favicon.ico --collect-all customtkinter --collect-all ttkthemes --collect-all pystray --add-data "config/config.json;config" --add-data "img/favicon.ico;img" --add-data "img/favicon.png;img" main.pyw
+          if ($LASTEXITCODE -ne 0) { throw "Empacotamento falhou." }
+          $dest = "dist/DCA-Monitor-PREVIEW"
+          if (!(Test-Path "$dest/DCA-Monitor-PREVIEW.exe")) { throw "Executável ausente." }
+          New-Item -Path "$dest/DCA-PREVIEW-MODE" -ItemType File | Out-Null
+          Copy-Item "docs/HOMOLOGACAO_PREVIEW_DOWNLOAD.md" "$dest/LEIA-ANTES-DE-TESTAR.md"
+          $forbidden = @("$dest/_internal/db/meu_diario_operacoes.csv", "$dest/db/meu_diario_operacoes.csv", "$dest/portfolio.sqlite3")
+          foreach ($file in $forbidden) { if (Test-Path $file) { throw "Dado financeiro indevidamente incluído: $file" } }
+      - name: Launch frozen program and verify isolated empty wallet
+        shell: pwsh
+        run: python tests/windows_frozen_preview_smoke.py
+      - name: Integrity manifest for portable preview
+        shell: pwsh
+        run: |
+          $dest = (Resolve-Path "dist/DCA-Monitor-PREVIEW").Path
+          $files = Get-ChildItem -Path $dest -Recurse -File | Where-Object { $_.Name -ne 'SHA256SUMS.txt' }
+          $lines = foreach ($f in $files) {
+            $relative = $f.FullName.Substring($dest.Length + 1).Replace('\', '/')
+            $hash = (Get-FileHash -LiteralPath $f.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+            "$hash  $relative"
+          }
+          $lines | Set-Content -Path "$dest/SHA256SUMS.txt" -Encoding ascii
+          Get-FileHash "$dest/DCA-Monitor-PREVIEW.exe" -Algorithm SHA256 | Format-List
+      - name: Upload private-test preview as CI artifact (NOT a GitHub Release)
+        uses: actions/upload-artifact@v4
+        with:
+          name: DCA-Monitor-PREVIEW-Windows-x64
+          path: dist/DCA-Monitor-PREVIEW/
+          if-no-files-found: error
+          retention-days: 7
