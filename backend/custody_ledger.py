@@ -53,8 +53,6 @@ def apurar_custodia(saldos_externos, movimentos=(), *, ate: date | None = None,
         c = p.get("Custo_Total_USDT")
         if c is None or str(c).strip() == "":
             lot["custo"] = None
-            if key[0] not in ("USDT", "USDC"):
-                ativos_com_custo_incompleto.add(key[0])
         elif lot["custo"] is not None:
             lot["custo"] += numero(c, "Custo inicial")
 
@@ -111,14 +109,21 @@ def apurar_custodia(saldos_externos, movimentos=(), *, ate: date | None = None,
         custo_fee = (ZERO if fee_coin == ZERO else
                      None if base is None else base * fee_coin / source["quantidade"])
         source["quantidade"] -= total_saida
-        if base is not None:
+        if source["quantidade"] == ZERO:
+            # Fully disposed lots no longer carry an unknown historical basis.
+            # That disposal stays unknown in realized results, but a later
+            # independently documented lot starts with its own cost basis.
+            source["custo"] = ZERO
+        elif base is not None:
             source["custo"] -= custo_venda + custo_fee
-            if source["quantidade"] == ZERO:
-                source["custo"] = ZERO
         if tipo == "transferencia":
             target = lots[(coin, destino)]
+            empty_before = target["quantidade"] == ZERO
             target["quantidade"] += qtd
-            if target["custo"] is None or custo_venda is None:
+            if empty_before:
+                # A previously depleted destination is a new cost epoch.
+                target["custo"] = custo_venda
+            elif target["custo"] is None or custo_venda is None:
                 target["custo"] = None
             else:
                 target["custo"] += custo_venda
