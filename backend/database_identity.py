@@ -6,16 +6,16 @@ from uuid import UUID
 
 # Mandatory financial records; optional future tables must not replace them.
 REQUIRED = {
-    'operacoes': {'id','data','moeda','operacao','valor_usdt','preco','quantidade','taxa_brl','taxa_corretagem_usdt'},
-    'importacoes_legadas': {'sha256','caminho_origem','caminho_backup','quantidade_registros'},
-    'cotacoes_historicas': {'data_utc','ativo','preco','fonte'},
-    'posicoes_iniciais': {'id','data_posicao','moeda','quantidade','custodia','custo_total_usdt'},
-    'posicoes_externas': {'id','data_posicao','moeda','quantidade','custodia','custo_total_usdt'},
-    'ajustes_posicoes': {'antes_json','depois_json','motivo','alterado_em_utc'},
-    'movimentacoes_custodia': {'id','data_utc','tipo','moeda','origem','destino','quantidade','taxa_ativo','receita_usdt','taxa_usdt','comando_id'},
-    'auditoria_operacoes': {'operacao_id','acao','antes_json','depois_json','motivo','operador','alterado_em_utc'},
-    'versoes_resultados': {'identidade','data_utc','regras','insumos_json','resultado_json','emitido_em_utc'},
-    'identidade_carteira': {'id','uuid'},
+    'operacoes': {'id', 'data', 'moeda', 'operacao', 'valor_usdt', 'preco', 'quantidade', 'taxa_brl', 'taxa_corretagem_usdt'},
+    'importacoes_legadas': {'sha256', 'caminho_origem', 'caminho_backup', 'quantidade_registros', 'importado_em'},
+    'cotacoes_historicas': {'data_utc', 'ativo', 'moeda_cotacao', 'preco', 'fonte', 'abertura_utc_ms', 'capturado_em_utc'},
+    'posicoes_iniciais': {'id', 'data_posicao', 'moeda', 'quantidade', 'custodia', 'custo_total_usdt', 'observacao', 'criado_em_utc'},
+    'posicoes_externas': {'id', 'data_posicao', 'moeda', 'quantidade', 'custodia', 'custo_total_usdt', 'observacao', 'confirmacao_independente', 'criado_em_utc'},
+    'ajustes_posicoes': {'id', 'tabela_origem', 'id_posicao', 'antes_json', 'depois_json', 'motivo', 'alterado_em_utc'},
+    'movimentacoes_custodia': {'id', 'data_utc', 'tipo', 'moeda', 'origem', 'destino', 'quantidade', 'taxa_ativo', 'receita_usdt', 'taxa_usdt', 'observacao', 'criado_em_utc', 'comando_id'},
+    'auditoria_operacoes': {'id', 'operacao_id', 'acao', 'antes_json', 'depois_json', 'motivo', 'operador', 'alterado_em_utc'},
+    'versoes_resultados': {'id', 'identidade', 'data_utc', 'regras', 'insumos_json', 'resultado_json', 'emitido_em_utc'},
+    'identidade_carteira': {'id', 'uuid'},
 }
 
 def validar_banco_dca(arquivo, *, carteira_esperada=None, permitir_antigo=False):
