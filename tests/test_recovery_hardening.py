@@ -15,3 +15,14 @@ class SchemaSafetyTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError,'versão|versao|futur'):
                 DataManager(data_dir=Path(root),auto_import_legacy=False)
             self.assertEqual(dm.arquivo_db.read_bytes(),before)
+
+class MissingDatabaseTests(unittest.TestCase):
+    def test_f08_missing_used_database_does_not_create_empty_replacement(self):
+        with TemporaryDirectory() as root:
+            dm=DataManager(data_dir=Path(root),auto_import_legacy=False)
+            dm.registrar_posicao_externa(moeda='BTC',quantidade='1',custodia='A',
+                data_posicao='2026-01-01',confirmacao_independente=True)
+            dm.arquivo_db.unlink()
+            with self.assertRaisesRegex(RuntimeError,'ausente|recuper'):
+                DataManager(data_dir=Path(root),auto_import_legacy=False)
+            self.assertFalse(dm.arquivo_db.exists())

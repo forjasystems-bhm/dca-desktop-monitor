@@ -126,7 +126,21 @@ class ArmazemSQLite:
         self.diretorio.mkdir(parents=True, exist_ok=True)
         self.arquivo_legado = Path(arquivo_legado).expanduser().resolve() if arquivo_legado else None
         self.arquivo_db = self.diretorio / "portfolio.sqlite3"
+        marker = self.diretorio / "data-identity.json"
+        if not self.arquivo_db.exists() and (
+            marker.exists() or any((self.diretorio / "backups").glob("**/*"))
+            or any(self.diretorio.glob("portfolio.sqlite3-*"))
+        ):
+            raise ErroArmazenamento(
+                "SQLite anteriormente utilizado está ausente. Inicie a manutenção "
+                "de recuperação; não criar carteira vazia de substituição."
+            )
         self._inicializar()
+        if not marker.exists():
+            with marker.open("x", encoding="utf-8") as out:
+                json.dump({"formato":"DCA-DATA-IDENTITY-1", "banco":self.arquivo_db.name},out)
+                out.flush()
+                os.fsync(out.fileno())
         if (auto_importar_legado and self.arquivo_legado is not None
                 and self.arquivo_legado.is_file()):
             self.importar_csv(self.arquivo_legado)
