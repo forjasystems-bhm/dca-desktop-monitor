@@ -84,6 +84,8 @@ jobs:
           python -m pip install -r requirements.txt pyinstaller==6.16.0
       - name: Financial and update regressions
         run: python -m unittest discover -s tests -v
+      - name: Linux real CSV picker and competing balance refresh regression
+        run: xvfb-run -a python tests/linux_csv_dialog_smoke.py
       - name: Package Linux application
         run: |
           python -m PyInstaller --noconfirm --clean --onedir --windowed --name DCA-Monitor --collect-all customtkinter --collect-all ttkthemes --collect-all pystray --add-data "config/config.json:config" --add-data "img/favicon.ico:img" --add-data "img/favicon.png:img" main.pyw

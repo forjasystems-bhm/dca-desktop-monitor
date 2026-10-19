@@ -362,8 +362,23 @@ class JanelaCaixa(ctk.CTkFrame):
             )
             self._tasks.post(lambda: self._atualizar_ui(info, stable))
         except Exception as e:
-            self._tasks.post(lambda: self.lbl_status.configure(text="✕ erro", text_color=NEON_RED))
-            self._tasks.post(lambda error=str(e): messagebox.showerror("Erro", f"Erro ao carregar saldo:\n{error}"))
+            self._tasks.post(lambda error=str(e): self._mostrar_erro_saldo(error))
+
+    def _mostrar_erro_saldo(self, erro):
+        # An automatic refresh must never open a competing modal dialog while
+        # Tk is running the file picker's nested event loop. Invalidate the old
+        # figures too: a failed refresh is not a verified zero or a current total.
+        self.lbl_status.configure(
+            text=f"Saldo não apurado: {erro}\nConfira a operação em Histórico e Edição.",
+            text_color=NEON_RED, wraplength=650,
+        )
+        self.lbl_saldo.configure(text="Saldo não apurado", text_color=NEON_RED)
+        self.lbl_saldo_usdc.configure(text="USDC: não apurado", text_color=NEON_RED)
+        self.lbl_fluxo_usdc.configure(text="Conferência pendente; nenhum valor foi corrigido automaticamente.")
+        for key, *_ in _CARD_DEFS:
+            self._set_card(key, "Não apurado")
+        for row in self.tree.get_children():
+            self.tree.delete(row)
 
     def _atualizar_ui(self, info, stable=None):
         if stable is not None:
