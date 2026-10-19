@@ -72,6 +72,7 @@ class JanelaCaixa(ctk.CTkFrame):
         self._price_manager = price_manager
         self._engine        = analysis_engine
         self.display_currency = "USD"
+        self._ultimo_resultado = None
         self._cards           = {}
         self._build_ui()
         self._bind_tab_select(parent)
@@ -164,7 +165,12 @@ class JanelaCaixa(ctk.CTkFrame):
 
     def _on_currency_change(self, currency: str):
         self.display_currency = currency
-        self.atualizar()
+        if self._ultimo_resultado is None:
+            self.atualizar()
+            return
+        for row in self.tree.get_children():
+            self.tree.delete(row)
+        self._atualizar_ui(*self._ultimo_resultado)
 
     def _build_cards(self):
         frame = ctk.CTkFrame(self, fg_color=BG_DEEP, corner_radius=0)
@@ -368,6 +374,7 @@ class JanelaCaixa(ctk.CTkFrame):
         # An automatic refresh must never open a competing modal dialog while
         # Tk is running the file picker's nested event loop. Invalidate the old
         # figures too: a failed refresh is not a verified zero or a current total.
+        self._ultimo_resultado = None
         self.lbl_status.configure(
             text=f"Saldo não apurado: {erro}\nConfira a operação em Histórico e Edição.",
             text_color=NEON_RED, wraplength=650,
@@ -381,6 +388,7 @@ class JanelaCaixa(ctk.CTkFrame):
             self.tree.delete(row)
 
     def _atualizar_ui(self, info, stable=None):
+        self._ultimo_resultado = (info, stable)
         if stable is not None:
             usdc = stable["saldos"]["USDC"]
             entrou = stable["entradas"]["USDC"]
