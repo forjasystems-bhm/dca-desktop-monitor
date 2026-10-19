@@ -63,7 +63,11 @@ def recuperar_pacote(pacote,destino):
                 content=archive.read(name)
                 if digest(content)!=sha:raise RuntimeError('Hash divergente: '+name)
                 (stage/name).write_bytes(content)
-        db=stage/'portfolio.sqlite3';identity=validar_banco_dca(db,carteira_esperada=manifest['uuid'])
+        db=stage/'portfolio.sqlite3';identity=validar_banco_dca(db,carteira_esperada=manifest['uuid'],permitir_antigo=True)
+        from backend.storage_sqlite import SCHEMA_VERSION, ArmazemSQLite
+        if identity['schema'] < SCHEMA_VERSION:
+            ArmazemSQLite(stage,None,auto_importar_legado=False)
+            validar_banco_dca(db,carteira_esperada=manifest['uuid'])
         with closing(sqlite3.connect(db)) as conn:
             records=conn.execute('SELECT sha256 FROM importacoes_legadas').fetchall()
             if records:
@@ -82,6 +86,7 @@ def recuperar_pacote(pacote,destino):
         target.mkdir()  # exclusive; never merge into an existing installation
         (target/"RECOVERY-INCOMPLETE").write_text("Recuperação ainda não concluída",encoding="utf-8")
         for file in stage.iterdir():
+            if not file.is_file():continue
             with file.open('rb') as source,(target/file.name).open('xb') as output:
                 for chunk in iter(lambda:source.read(1024*1024),b''):output.write(chunk)
                 output.flush();os.fsync(output.fileno())

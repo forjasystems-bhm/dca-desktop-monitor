@@ -18,15 +18,17 @@ REQUIRED = {
     'identidade_carteira': {'id','uuid'},
 }
 
-def validar_banco_dca(arquivo, *, carteira_esperada=None):
+def validar_banco_dca(arquivo, *, carteira_esperada=None, permitir_antigo=False):
     from backend.storage_sqlite import SCHEMA_VERSION
     path=Path(arquivo).resolve()
     try:
         with closing(sqlite3.connect(path.as_uri()+'?mode=ro',uri=True)) as conn:
             version=conn.execute('PRAGMA user_version').fetchone()[0]
-            if version != SCHEMA_VERSION:
+            if version != SCHEMA_VERSION and not (permitir_antigo and 8 <= version < SCHEMA_VERSION):
                 raise RuntimeError('Backup DCA com versão incompatível; requer migração assistida.')
             for table, required in REQUIRED.items():
+                if version < 9 and table == 'auditoria_operacoes':continue
+                if version < 10 and table == 'versoes_resultados':continue
                 columns={row[1] for row in conn.execute('PRAGMA table_info('+table+')')}
                 if not required <= columns:
                     raise RuntimeError('Estrutura DCA inválida: '+table)

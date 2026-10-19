@@ -160,3 +160,20 @@ class MigrationAtomicityTests(unittest.TestCase):
             with closing(sqlite3.connect(dm.arquivo_db)) as conn:
                 self.assertEqual(conn.execute('PRAGMA user_version').fetchone()[0],9)
                 self.assertEqual(conn.execute("SELECT count(*) FROM sqlite_master WHERE name='versoes_resultados'").fetchone()[0],0)
+
+class OldIdentifiedBackupTests(unittest.TestCase):
+    def test_v8_backup_is_migrated_in_staging_without_changing_source(self):
+        from backend.backup_sqlite import criar_backup_sqlite
+        from backend.restore_offline import ativar_restauracao_offline,CONFIRMACAO
+        from backend.storage_sqlite import SCHEMA_VERSION
+        with TemporaryDirectory() as temp:
+            root=Path(temp);dm=DataManager(data_dir=root/'data',auto_import_legacy=False)
+            with closing(sqlite3.connect(dm.arquivo_db)) as conn:
+                conn.execute('DROP TABLE versoes_resultados');conn.execute('DROP TABLE auditoria_operacoes');conn.execute('PRAGMA user_version=8');conn.commit()
+            result=criar_backup_sqlite(dm.arquivo_db,root/'external')
+            snapshot=Path(result['backup']);before=snapshot.read_bytes()
+            with closing(sqlite3.connect(dm.arquivo_db)) as conn:conn.execute('PRAGMA wal_checkpoint(TRUNCATE)')
+            dm.arquivo_db.unlink()
+            restored=ativar_restauracao_offline(Path(result['manifesto']),dm.arquivo_db,confirmacao=CONFIRMACAO,aplicativo_encerrado=True)
+            self.assertTrue(restored['ativado']);self.assertEqual(snapshot.read_bytes(),before)
+            with closing(sqlite3.connect(dm.arquivo_db)) as conn:self.assertEqual(conn.execute('PRAGMA user_version').fetchone()[0],SCHEMA_VERSION)

@@ -44,7 +44,7 @@ def _ativar_restauracao_offline(
     import json
     marker=db.parent/"data-identity.json"
     expected=json.loads(marker.read_text(encoding="utf-8")).get("uuid") if marker.is_file() else None
-    validar_banco_dca(origem, carteira_esperada=expected)
+    source_identity=validar_banco_dca(origem, carteira_esperada=expected,permitir_antigo=True)
     if db == origem or db.suffix.lower() not in (".sqlite3",".db"):
         raise ErroBackupSQLite("Banco ativo inexistente, idêntico ao backup ou formato inválido.")
     # External process could still hold a WAL connection: do not move those files.
@@ -78,6 +78,13 @@ def _ativar_restauracao_offline(
     try:
         preparar_restauracao_sqlite(Path(manifesto),stage)
         verificar_backup_sqlite(stage,verified["sha256"])
+        from backend.storage_sqlite import SCHEMA_VERSION,ArmazemSQLite
+        if source_identity['schema'] < SCHEMA_VERSION:
+            staged=ArmazemSQLite.__new__(ArmazemSQLite)
+            staged.arquivo_db,staged.diretorio=stage,stage.parent
+            staged._inicializar()
+            validar_banco_dca(stage,carteira_esperada=expected)
+        target_hash=_hash_sha256(stage)
         # Atomic moves on the SAME filesystem; never overwrite user's
         # prior rollback copy. No source backup is touched.
         if db.exists():
@@ -85,7 +92,7 @@ def _ativar_restauracao_offline(
         swapped=True
         try:
             os.rename(stage,db)
-            verificar_backup_sqlite(db,verified["sha256"])
+            verificar_backup_sqlite(db,target_hash)
         except Exception:
             if db.exists():
                 db.unlink()
@@ -96,7 +103,7 @@ def _ativar_restauracao_offline(
                 raise ErroBackupSQLite("Rollback diverge dos bytes originais.")
             raise
         return {
-            "ativado":True,"banco":str(db),"sha256":verified["sha256"],
+            "ativado":True,"banco":str(db),"sha256":target_hash,"sha256_backup_original":verified["sha256"],
             "rollback_original":str(rollback) if rollback.exists() else None,
             "backup_previo":original_copy["manifesto"] if original_copy else None,
             "manifesto_restaurado":str(Path(manifesto).resolve()),
