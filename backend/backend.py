@@ -54,6 +54,9 @@ class DataManager:
         """API de cálculo histórico exato; não converte números a float."""
         return self._store.listar_preciso()
 
+    def carregar_operacao_para_edicao(self, indice):
+        return self._store.listar_preciso()[indice]
+
     def importar_csv_legado(self, caminho: str) -> int:
         return self._store.importar_csv(Path(caminho))
 

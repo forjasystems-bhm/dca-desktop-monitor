@@ -370,14 +370,14 @@ class JanelaEdicao(ctk.CTkFrame):
         self._indice_editando = self._mapa_indices.get(item)
         valores = self._tree.item(item, "values")
 
-        operacoes = self._data_manager.carregar_operacoes()
-        self._op_original = operacoes[self._indice_editando]
+        self._op_original = self._data_manager.carregar_operacao_para_edicao(self._indice_editando)
 
         self._campo_corretagem.delete(0, "end")
         fee = self._op_original.get("Taxa_Corretagem_USDT")
         if fee is not None and str(fee).strip():
             self._campo_corretagem.insert(0, str(fee))
-        for col, valor in zip(self._data_manager.headers, valores):
+        for col in self._data_manager.headers:
+            valor = self._op_original.get(col, "")
             widget = self._campos[col]
 
             if isinstance(widget, ctk.CTkComboBox):
@@ -390,7 +390,7 @@ class JanelaEdicao(ctk.CTkFrame):
                 widget.configure(state="disabled")
             else:
                 widget.configure(state="normal")
-                valor_fmt = f"{float(valor):.2f}" if col == "Taxa_BRL" and valor != "" else valor
+                valor_fmt = str(valor)
                 widget.delete(0, "end")
                 widget.insert(0, valor_fmt)
 
@@ -406,7 +406,10 @@ class JanelaEdicao(ctk.CTkFrame):
             datetime.strptime(nova_data, "%Y-%m-%d %H:%M:%S")
 
             campo_taxa = self._campos.get("Taxa_BRL")
-            taxa_brl = round(float(campo_taxa.get().strip() or 0), 2) if campo_taxa else self._op_original.get("Taxa_BRL", 0.0)
+            from decimal import Decimal
+            taxa_brl = Decimal(campo_taxa.get().strip() or "0") if campo_taxa else Decimal(str(self._op_original.get("Taxa_BRL", "0")))
+            if not taxa_brl.is_finite():
+                raise ValueError("Câmbio não finito")
 
             if taxa_brl != 0 and taxa_brl <= 1.1:
                 messagebox.showerror(
@@ -428,7 +431,7 @@ class JanelaEdicao(ctk.CTkFrame):
                 else:
                     nova_op[col] = widget.get().strip()
 
-            nova_op["Taxa_BRL"] = taxa_brl
+            nova_op["Taxa_BRL"] = str(taxa_brl)
             taxa_usdt = self._campo_corretagem.get().strip()
             nova_op["Taxa_Corretagem_USDT"] = taxa_usdt or None
 
