@@ -138,6 +138,33 @@ def verificar_manifesto_sqlite(manifesto_path: Path) -> dict:
         raise ErroBackupSQLite(f"Manifesto do backup inválido: {exc}") from exc
 
 
+def publicar_arquivo_exclusivo(origem: Path, destino: Path):
+    """Publish without overwrite, including filesystems lacking hard links.
+
+    On failure remove only an output this call actually created; a concurrent
+    destination belongs to someone else and MUST remain byte-for-byte intact.
+    """
+    owned = False
+    try:
+        try:
+            os.link(origem, destino)
+            owned = True
+        except OSError:
+            with destino.open("xb") as output:
+                owned = True
+                with origem.open("rb") as source:
+                    for chunk in iter(lambda: source.read(1024 * 1024), b""):
+                        output.write(chunk)
+                output.flush()
+                os.fsync(output.fileno())
+        if _hash_sha256(origem) != _hash_sha256(destino):
+            raise ErroBackupSQLite("Publicação de arquivo divergente da origem.")
+    except Exception:
+        if owned:
+            destino.unlink(missing_ok=True)
+        raise
+
+
 def preparar_restauracao_sqlite(manifesto: Path, destino: Path) -> dict:
     """RECUPERA em arquivo separado; nunca troca DB ativo ou sobrescreve um arquivo.
 
@@ -151,6 +178,7 @@ def preparar_restauracao_sqlite(manifesto: Path, destino: Path) -> dict:
         raise ErroBackupSQLite("Destino de recuperação já existe; nenhuma substituição permitida.")
     destino.parent.mkdir(parents=True, exist_ok=True)
     temporario = destino.with_name("." + destino.name + "-" + secrets.token_hex(4) + ".tmp")
+    published = False
     try:
         with origem.open("rb") as fonte, temporario.open("xb") as copia:
             for bloco in iter(lambda: fonte.read(1024 * 1024), b""):
@@ -158,13 +186,15 @@ def preparar_restauracao_sqlite(manifesto: Path, destino: Path) -> dict:
             copia.flush()
             os.fsync(copia.fileno())
         verificar_backup_sqlite(temporario, verificado["sha256"])
-        os.link(temporario, destino)  # reserva destino sem sobrescrever arquivo existente
+        publicar_arquivo_exclusivo(temporario, destino)
+        published = True
         verificar_backup_sqlite(destino, verificado["sha256"])
         return {"preparado": str(destino), "sha256": verificado["sha256"],
                 "ativado": False, "origem": str(origem)}
     except Exception:
         # Se verificação final falhar, não deixar arquivo anunciado como pronto.
-        destino.unlink(missing_ok=True)
+        if published:
+            destino.unlink(missing_ok=True)
         raise
     finally:
         temporario.unlink(missing_ok=True)

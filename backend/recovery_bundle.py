@@ -8,7 +8,7 @@ import os
 import sqlite3
 import tempfile
 import zipfile
-from backend.backup_sqlite import criar_backup_sqlite
+from backend.backup_sqlite import criar_backup_sqlite, publicar_arquivo_exclusivo
 from backend.database_identity import validar_banco_dca
 
 CONFIGS=('app-settings.json','user-config.json')
@@ -42,7 +42,7 @@ def exportar_pacote(banco,destino):
             archive.writestr('manifest.json',json.dumps(manifest,ensure_ascii=False))
             for name,content in data.items():archive.writestr(name,content)
         with temp.open('rb+') as stream:os.fsync(stream.fileno())
-        os.link(temp,out)
+        publicar_arquivo_exclusivo(temp,out)
     return {'pacote':str(out),'sha256':digest(out.read_bytes()),'uuid':identity['uuid']}
 
 def recuperar_pacote(pacote,destino):

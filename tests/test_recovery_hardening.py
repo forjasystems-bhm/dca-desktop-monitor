@@ -177,3 +177,30 @@ class OldIdentifiedBackupTests(unittest.TestCase):
             restored=ativar_restauracao_offline(Path(result['manifesto']),dm.arquivo_db,confirmacao=CONFIRMACAO,aplicativo_encerrado=True)
             self.assertTrue(restored['ativado']);self.assertEqual(snapshot.read_bytes(),before)
             with closing(sqlite3.connect(dm.arquivo_db)) as conn:self.assertEqual(conn.execute('PRAGMA user_version').fetchone()[0],SCHEMA_VERSION)
+
+class PortableFilesystemTests(unittest.TestCase):
+    def test_bundle_and_restore_staging_work_without_hardlinks(self):
+        from unittest.mock import patch
+        from backend.recovery_bundle import exportar_pacote,recuperar_pacote
+        from backend.backup_sqlite import criar_backup_sqlite,preparar_restauracao_sqlite
+        with TemporaryDirectory() as temp:
+            root=Path(temp);dm=DataManager(data_dir=root/'data',auto_import_legacy=False)
+            backup=criar_backup_sqlite(dm.arquivo_db,root/'backup')
+            with patch('os.link',side_effect=OSError('filesystem does not support hard links')):
+                exportar_pacote(dm.arquivo_db,root/'portable.zip')
+                recuperar_pacote(root/'portable.zip',root/'recovered')
+                preparar_restauracao_sqlite(Path(backup['manifesto']),root/'prepared.sqlite3')
+            self.assertTrue((root/'prepared.sqlite3').is_file())
+
+    def test_concurrent_destination_is_never_deleted_on_publish_failure(self):
+        from unittest.mock import patch
+        from backend.backup_sqlite import criar_backup_sqlite,preparar_restauracao_sqlite
+        with TemporaryDirectory() as temp:
+            root=Path(temp);dm=DataManager(data_dir=root/'data',auto_import_legacy=False)
+            backup=criar_backup_sqlite(dm.arquivo_db,root/'backup');target=root/'prepared.sqlite3'
+            def collision(*args):
+                target.write_bytes(b'OTHER OWNER DATA')
+                raise FileExistsError('concurrent destination')
+            with patch('os.link',side_effect=collision):
+                with self.assertRaises(FileExistsError):preparar_restauracao_sqlite(Path(backup['manifesto']),target)
+            self.assertEqual(target.read_bytes(),b'OTHER OWNER DATA')

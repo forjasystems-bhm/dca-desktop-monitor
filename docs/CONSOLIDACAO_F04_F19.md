@@ -26,7 +26,7 @@ não encerra homologação operacional.
 | F08 | Marcador persistente de identidade e rastros de uso bloqueiam criação de banco substituto vazio. `test_recovery_hardening.py`. | Perda de toda a pasta local exige recuperar pacote externo. |
 | F09 | `recover.pyw`, manutenção offline sob trava, banco ausente/corrompido aceito; original corrompido preservado para rollback. Testes de desastre e de falha durante troca. | Sidecars WAL/SHM ainda presentes bloqueiam troca; não são apagados automaticamente. |
 | F10 | `database_identity.py`: estrutura DCA, versão, integrity_check e UUID da carteira. Rejeita SQLite de outro aplicativo/carteira antes de substituir. | UUID identifica carteira, não é assinatura criptográfica contra adulteração deliberada. |
-| F11 | `recovery_bundle.py`: ZIP com SQLite consistente, CSV original por hash, configurações e recibo. Recupera somente em pasta nova. Testes de perda de caminhos e ZIP malicioso. | Destino externo deve ser reescolhido na máquina nova; pacote não carrega caminhos antigos de backup. Pacote não é criptografado. |
+| F11 | `recovery_bundle.py`: ZIP com SQLite consistente, CSV original por hash, configurações e recibo. Recupera somente em pasta nova; funciona sem hard links e preserva destino concorrente. Testes de perda de caminhos e ZIP malicioso. | Destino externo deve ser reescolhido na máquina nova; pacote não carrega caminhos antigos de backup. Pacote não é criptografado. |
 | F12 | Schema versionado 10, recusa futuro/danificado antes de DDL; migração transacional com snapshot anterior. Teste de falha injetada e rollback de DDL. Recuperação migra cópias identificadas v8/v9. | Backup anterior à identidade v8 não permite comprovar automaticamente a carteira: requer conferência assistida, sem atribuição silenciosa de UUID. |
 | F13 | Snapshot após CRUD/cotações e demais gravações protegidas; opção explícita de destino externo com pacote portátil. Retenção de todas as cópias. Testes de espelhamento e disco cheio. | Não comprova separação física dos discos; usuário escolhe destino. Sem poda destrutiva. Monitorar espaço. Falha após COMMIT gera aviso, não falso rollback. |
 | F14 | `versoes_resultados`: versão emitida imutável com regras, insumos exatos, saída e hash; cálculo usa snapshot SQLite consistente. Entrada antiga de custo passa pela correção auditada. `test_result_versions.py`. | Reexpressão atual foi preservada. Política fiscal/contábil de retificação continua decisão humana. Versões nunca emitidas antes desta correção não podem ser reconstruídas como prova pretérita. |
@@ -38,7 +38,7 @@ não encerra homologação operacional.
 
 ## Validação e evidências
 
-Comando local: `python -m unittest discover -s tests` — 226 testes aprovados no
+Comando local: `python -m unittest discover -s tests` — 228 testes aprovados no
 marco anterior à documentação; `python -m compileall -q backend gui tests main.pyw`
 e `git diff --check` também executados. O total final e os links de Linux/Windows
 serão registrados na PR após o marco integrado.
