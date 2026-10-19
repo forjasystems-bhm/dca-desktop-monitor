@@ -356,6 +356,8 @@ class JanelaRegistro(JanelaRegistroUI):
                 msg = f"{tipo_csv.title()} de {moeda} registrada com sucesso!"
 
             messagebox.showinfo("Sucesso", msg)
+            aviso=getattr(self._data_manager,"ultimo_aviso_backup",None)
+            if aviso:messagebox.showwarning("Gravação confirmada — backup pendente",aviso,parent=self)
             self._limpar()
             self._on_change()
 

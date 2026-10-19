@@ -441,6 +441,7 @@ class JanelaEdicao(ctk.CTkFrame):
             if motivo is None:return
             if self._data_manager.atualizar_operacao(self._indice_editando, nova_op,motivo=motivo):
                 messagebox.showinfo("Sucesso", "Transação atualizada com sucesso!")
+                self._avisar_backup()
                 self._indice_editando = None
                 self._op_original     = None
                 self._on_change()
@@ -468,6 +469,7 @@ class JanelaEdicao(ctk.CTkFrame):
             if motivo is None:return
             if self._data_manager.excluir_operacao(self._indice_editando,motivo=motivo):
                 messagebox.showinfo("Sucesso", "Excluído com sucesso!")
+                self._avisar_backup()
                 self._indice_editando = None
                 self._op_original     = None
                 self._on_change()
@@ -494,3 +496,6 @@ class JanelaEdicao(ctk.CTkFrame):
                 widget.delete(0, "end")
         self._indice_editando = None
         self._op_original     = None
+    def _avisar_backup(self):
+        aviso=getattr(self._data_manager,"ultimo_aviso_backup",None)
+        if aviso:messagebox.showwarning("Gravação confirmada — backup pendente",aviso,parent=self)

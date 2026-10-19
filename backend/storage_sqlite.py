@@ -126,6 +126,8 @@ class ArmazemSQLite:
         self.diretorio.mkdir(parents=True, exist_ok=True)
         self.arquivo_legado = Path(arquivo_legado).expanduser().resolve() if arquivo_legado else None
         self.arquivo_db = self.diretorio / "portfolio.sqlite3"
+        if (self.diretorio / "RECOVERY-INCOMPLETE").exists():
+            raise ErroArmazenamento("Recuperação incompleta; não abrir este diretório.")
         marker = self.diretorio / "data-identity.json"
         if not self.arquivo_db.exists() and (
             marker.exists() or any((self.diretorio / "backups").glob("**/*"))

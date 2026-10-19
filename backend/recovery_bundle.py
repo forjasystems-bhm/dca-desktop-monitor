@@ -80,8 +80,10 @@ def recuperar_pacote(pacote,destino):
             'banco_remapeado_sha256':digest(db.read_bytes()),
             'nota':'Somente caminhos de proveniência remapeados; registros financeiros preservados.'},ensure_ascii=False),encoding='utf-8')
         target.mkdir()  # exclusive; never merge into an existing installation
+        (target/"RECOVERY-INCOMPLETE").write_text("Recuperação ainda não concluída",encoding="utf-8")
         for file in stage.iterdir():
             with file.open('rb') as source,(target/file.name).open('xb') as output:
                 for chunk in iter(lambda:source.read(1024*1024),b''):output.write(chunk)
                 output.flush();os.fsync(output.fileno())
+        (target/"RECOVERY-INCOMPLETE").unlink()
     return {'diretorio':str(target),'uuid':identity['uuid'],'ativado':False}

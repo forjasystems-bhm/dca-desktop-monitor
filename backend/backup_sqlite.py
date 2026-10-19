@@ -106,6 +106,10 @@ def criar_backup_sqlite(banco: Path, destino: Path, *, motivo: str = "manual") -
             # Jamais declarar sucesso com um snapshot sem trilha de auditoria.
             arquivo_final.unlink(missing_ok=True)
             raise
+        if (destino == banco.parent / "backups" / "sqlite"
+                and not motivo.startswith("antes_schema")):
+            from backend.backup_policy import espelhar_banco
+            espelhar_banco(banco)
         return {"backup": str(arquivo_final), "manifesto": str(manifesto_final), **manifesto}
     finally:
         temporario.unlink(missing_ok=True)

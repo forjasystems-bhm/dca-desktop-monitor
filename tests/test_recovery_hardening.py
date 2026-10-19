@@ -114,3 +114,18 @@ class BackupPolicyTests(unittest.TestCase):
             manifest=json.loads(manifests[-1].read_text())
             with closing(sqlite3.connect(manifests[-1].parent/manifest['arquivo'])) as conn:
                 self.assertEqual(conn.execute('SELECT COUNT(*) FROM operacoes').fetchone()[0],1)
+
+class IndependentBackupTests(unittest.TestCase):
+    def test_external_position_write_is_protected_and_failed_backup_does_not_fake_rollback(self):
+        from backend.backup_policy import configurar_destino_independente
+        from unittest.mock import patch
+        with TemporaryDirectory() as temp:
+            root=Path(temp);dm=DataManager(data_dir=root/'data',auto_import_legacy=False)
+            configurar_destino_independente(root/'data',root/'independent')
+            dm.registrar_posicao_externa(moeda='BTC',quantidade='1',custodia='A',
+                data_posicao='2026-01-01',confirmacao_independente=True)
+            self.assertTrue(list((root/'independent').glob('*.zip')))
+            with patch('backend.backup_policy.espelhar_banco',side_effect=OSError('disco cheio')):
+                self.assertTrue(dm.salvar_operacao(['2026-01-01 12:00:00','USDT','compra','10','5','10','5']))
+            self.assertEqual(len(dm.carregar_operacoes_precisas()),1)
+            self.assertIn('disco cheio',dm.ultimo_aviso_backup)

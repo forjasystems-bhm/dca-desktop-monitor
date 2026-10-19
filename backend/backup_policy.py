@@ -71,6 +71,12 @@ def proteger_gravacao(banco):
     from uuid import uuid4
     db=Path(banco).resolve()
     snapshot=criar_backup_sqlite(db,db.parent/'backups'/'sqlite',motivo='apos_gravacao')
+    return snapshot
+
+
+def espelhar_banco(banco):
+    from uuid import uuid4
+    db=Path(banco).resolve()
     policy=db.parent/'backup-policy.json'
     if policy.is_file():
         config=json.loads(policy.read_text(encoding='utf-8'))
@@ -78,4 +84,3 @@ def proteger_gravacao(banco):
             from backend.recovery_bundle import exportar_pacote
             target=Path(config['destino_externo'])/('DCA-'+datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S')+'-'+uuid4().hex+'.zip')
             exportar_pacote(db,target)
-    return snapshot
