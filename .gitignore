@@ -22,4 +22,4 @@ dist/
 
 # ---- IMPORTANTE ----
 # Arquivo de dados do usuário. Não inclua seu histórico pessoal no repositório!
-meu_diario_operacoes.csv
+meu_diario_operacoes*.csv
