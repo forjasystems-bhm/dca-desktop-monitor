@@ -74,3 +74,31 @@ class DisasterRecoveryTests(unittest.TestCase):
                     self.assertEqual(Path(result['rollback_original']).read_bytes(),b'CORRUPT ORIGINAL EVIDENCE')
                 reopened=DataManager(data_dir=root/'data',auto_import_legacy=False)
                 self.assertEqual(reopened.carregar_posicoes_externas()[0]['Quantidade'],'1')
+
+class PortableRecoveryTests(unittest.TestCase):
+    def test_f11_bundle_survives_loss_of_original_paths_and_config(self):
+        from backend.recovery_bundle import exportar_pacote, recuperar_pacote
+        with TemporaryDirectory() as temp:
+            root=Path(temp);source=root/'old';csv=root/'original.csv'
+            csv.write_bytes(b'Data,Moeda,Operacao,Valor_USDT,Preco,Quantidade,Taxa_BRL\n2026-01-01 12:00:00,USDT,compra,100,5,100,5\n')
+            dm=DataManager(data_dir=source,auto_import_legacy=False)
+            preview=dm.prever_csv(str(csv));dm.confirmar_csv(str(csv),preview['sha256'])
+            (source/'app-settings.json').write_text('{"minimizar_para_bandeja":false}')
+            bundle=root/'recovery.zip';exportar_pacote(dm.arquivo_db,bundle)
+            import shutil
+            shutil.rmtree(source);csv.unlink()
+            target=root/'recovered';recuperar_pacote(bundle,target)
+            recovered=DataManager(data_dir=target,auto_import_legacy=False)
+            self.assertEqual(recovered.carregar_operacoes_precisas()[0]['Quantidade'],'100')
+            self.assertTrue((target/'app-settings.json').exists())
+            self.assertEqual(recovered._store.diagnostico_integridade()['status'],'OK')
+            with self.assertRaises(RuntimeError):recuperar_pacote(bundle,target)
+
+    def test_f11_archive_path_traversal_is_refused_before_creating_target(self):
+        from backend.recovery_bundle import recuperar_pacote
+        import zipfile
+        with TemporaryDirectory() as temp:
+            root=Path(temp);archive=root/'bad.zip';target=root/'target'
+            with zipfile.ZipFile(archive,'w') as z:z.writestr('../escape','bad')
+            with self.assertRaises(RuntimeError):recuperar_pacote(archive,target)
+            self.assertFalse(target.exists());self.assertFalse((root/'escape').exists())

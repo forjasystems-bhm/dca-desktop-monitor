@@ -116,6 +116,8 @@ class JanelaAplicativo(ctk.CTkToplevel):
             row,text="Preparar cópia de recuperação",
             fg_color=BG_INPUT,command=self._preparar_recuperacao,
         ).pack(side="left",padx=8)
+        ctk.CTkButton(recovery,text="Exportar pacote portátil de recuperação",
+            fg_color=BG_INPUT,command=self._exportar_pacote).pack(anchor="w",padx=12,pady=6)
         self._btn_restaurar=ctk.CTkButton(
             recovery,text="Fechar aplicativo e ativar recuperação",
             fg_color=BTC_ORANGE,text_color=BG_SURFACE,
@@ -245,6 +247,17 @@ class JanelaAplicativo(ctk.CTkToplevel):
             )
         except Exception as exc:
             messagebox.showerror("Recuperação não preparada",str(exc),parent=self)
+
+    def _exportar_pacote(self):
+        destino=filedialog.asksaveasfilename(parent=self,title="Salvar pacote de recuperação",
+            defaultextension=".zip",initialfile="DCA-Recuperacao.zip",filetypes=[("Pacote DCA","*.zip")])
+        if not destino:return
+        try:
+            from backend.recovery_bundle import exportar_pacote
+            result=exportar_pacote(self._db.arquivo_db,destino)
+            self.status_backup.configure(text="Pacote portátil verificado: "+result["pacote"],text_color=CYAN)
+        except Exception as exc:
+            messagebox.showerror("Pacote não exportado",str(exc),parent=self)
 
     def _pedir_restauracao(self):
         if self._manifesto_escolhido is None or self._on_restore is None:
