@@ -349,6 +349,35 @@ def main():
                 assert extrato.column(coluna)["minwidth"] >= 150
             print("GUI_UI01_CAIXA_COLUNAS_PRESERVADAS=PASS")
 
+            # F15/F17: exercise the REAL editor, not only persistence helpers.
+            from unittest.mock import patch
+            precise_fx="5.23456789123456789"
+            editor=app.aba_edicao
+            editor._indice_editando=None
+            editor._renderizar_tree(list(enumerate(dm.carregar_operacoes())))
+            item=next(key for key,index in editor._mapa_indices.items() if index==0)
+            editor._tree.selection_set(item)
+            editor._carregar_transacao()
+            original=dm.carregar_operacao_para_edicao(0)
+            editor._campos['Taxa_BRL'].delete(0,'end')
+            editor._campos['Taxa_BRL'].insert(0,precise_fx)
+            with patch('gui.janela_edicao.simpledialog.askstring',return_value='Comprovante sintético do smoke'), patch('gui.janela_edicao.messagebox.showinfo'):
+                editor._salvar_edicao()
+            edited=dm.carregar_operacao_para_edicao(0)
+            assert edited['Taxa_BRL']==precise_fx,edited
+            assert edited['Quantidade']==original['Quantidade']
+            assert dm._store.listar_auditoria_operacoes()[-1]['motivo']=='Comprovante sintético do smoke'
+            assert dm.atualizar_operacao(0,original,motivo='Reverter apenas o cenário sintético')
+            pump(root)
+            print('GUI_F15_F17_EDICAO_PRECISA_E_AUDITADA=PASS')
+            # F06/F07: a closed asset with unknown realized basis must render.
+            dash._inserir_detalhe('BTC',dict(quantidade_final=0,pmc_final=0,
+                custo_posicao_final=0,preco_de_mercado=100,valor_atual_posicao=0,
+                lucro_nao_realizado=0,lucro_realizado=None,lucro_total=None,
+                total_comprado_usdt=100),0)
+            assert dash._det_rows[0]._labels[7].cget('text')=='Indisponível'
+            print('GUI_F06_RESULTADO_DESCONHECIDO=PASS')
+
             # OPS-01: startup does not perform a Binance request. Use
             # the actual splash boot procedure without creating a second UI.
             from backend.local_startup import abrir_carteira_local
@@ -480,6 +509,8 @@ def main():
             assert app._closing is False
             app._on_closing()
             assert app._closing and not app._countdown_ativo
+            assert app.aba_caixa._tasks.closed and app.aba_distribuicao._tasks.closed
+            assert app.aba_edicao._tasks.closed
             assert app._after_id is None and app._initial_refresh_id is None
             assert app.atualizar_todas_as_analises() is False
             assert app._agendar_ui(lambda: 1 / 0) is False

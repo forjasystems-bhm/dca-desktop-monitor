@@ -14,7 +14,13 @@ class UiDispatcher:
         self.running = False
         self.pending = None
         self.token = widget.after(10, self._drain)
-        widget.bind('<Destroy>', self._destroyed, add='+')
+        # CTkFrame.bind proxies events to its Canvas, whose event.widget is
+        # NOT the owning frame. Bind the actual Tk widget for lifetime events.
+        if hasattr(widget, "tk"):
+            from tkinter import Misc
+            Misc.bind(widget, '<Destroy>', self._destroyed, add='+')
+        else:
+            widget.bind('<Destroy>', self._destroyed, add='+')
 
     def _destroyed(self, event):
         if event.widget is self.widget:

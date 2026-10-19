@@ -297,9 +297,6 @@ class JanelaEdicao(ctk.CTkFrame):
     def atualizar(self) -> None:
         if self._indice_editando is not None:
             return
-        if self._carregando:
-            return
-
         self._carregando = True
         self.lbl_status.configure(text="🔄 Carregando histórico...")
         self.btn_load.configure(state="disabled")

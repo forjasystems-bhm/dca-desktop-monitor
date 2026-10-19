@@ -17,3 +17,16 @@ class DispatchTests(unittest.TestCase):
         widget.calls.pop(0)();self.assertEqual(seen,[widget.owner])
         d.close();self.assertFalse(d.post(lambda:seen.append(99)))
         self.assertEqual(seen,[widget.owner])
+    def test_overlapping_refreshes_are_serialized_and_coalesced(self):
+        import time
+        widget=FakeWidget();d=UiDispatcher(widget);seen=[]
+        started=threading.Event();release=threading.Event()
+        def first():started.set();release.wait(2);seen.append(1)
+        d.run(first);self.assertTrue(started.wait(1))
+        d.run(lambda:seen.append(2));d.run(lambda:seen.append(3))
+        self.assertEqual(seen,[]);release.set()
+        deadline=time.monotonic()+2
+        while time.monotonic()<deadline and (d.running or d.pending):
+            if widget.calls:widget.calls.pop(0)()
+            time.sleep(0.002)
+        self.assertEqual(seen,[1,3]);d.close()

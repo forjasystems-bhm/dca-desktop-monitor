@@ -533,10 +533,10 @@ class JanelaDistribuicao(ctk.CTkFrame):
             str_pct = "Indisponível"
         elif custo is not None and custo > 0.000001:
             str_pct = f"{pl_nr / custo * 100:+.2f}%"
-        elif comprado_hist > 0.000001:
+        elif comprado_hist > 0.000001 and pl_r is not None:
             str_pct = f"{pl_r / comprado_hist * 100:+.2f}%"
         else:
-            str_pct = "—"
+            str_pct = "Não apurado" if pl_r is None else "—"
         bg      = BG_CARD if idx % 2 == 0 else BG_DEEP
 
         if moeda == "USDT (Caixa)":

@@ -33,12 +33,12 @@ não encerra homologação operacional.
 | F15 | `auditoria_operacoes`: antes/depois, ID, operador local, UTC, motivo obrigatório, triggers contra UPDATE/DELETE; mesma transação financeira. `test_operation_audit.py`. | Operador é conta do SO, não identidade autenticada. Não é trilha inviolável contra administrador SQLite. |
 | F16 | `config/carregar_json.py`: configuração mutável persistente por usuário, gravação atômica; pacote fornece defaults/migração inicial. `test_persistent_configuration.py`. | Validar pasta de usuário/permissões no Windows de homologação. |
 | F17 | Editor carrega registro preciso original e mantém texto Decimal, sem arredondar FX para duas casas. `test_edit_precision.py`. | Formatação de exibição continua distinta dos valores de escrituração. |
-| F18 | `ui_dispatch.py`: workers escrevem em Queue; apenas thread principal chama Tk, tarefas por tela serializadas, callbacks descartados após destroy. `test_ui_dispatch.py`. Scripts GUI tornam exceções assíncronas falhas de CI. | Rede em execução é daemon; encerramento descarta resultados, não força interrupção de biblioteca de terceiros. Exige validação Windows real. |
+| F18 | `ui_dispatch.py`: workers escrevem em Queue; apenas thread principal chama Tk, tarefas por tela serializadas, callbacks descartados após destroy do widget real (sem proxy do canvas). `test_ui_dispatch.py`. Scripts GUI tornam exceções assíncronas falhas de CI. | Rede em execução é daemon; encerramento descarta resultados, não força interrupção de biblioteca de terceiros. Exige validação Windows real. |
 | F19 | Uma branch/PR de consolidação; workflows de fonte sem build, regressão detecta receitas conhecidas de empacotamento. `DISTRIBUTION_POLICY.md`, `test_distribution_policy.py`. | **Parcial administrativo:** proteção global, arquivamento de workflows legados e ambiente de publicação exigem mantenedor. Nenhuma mudança em main ou outras branches. |
 
 ## Validação e evidências
 
-Comando local: `python -m unittest discover -s tests` — 225 testes aprovados no
+Comando local: `python -m unittest discover -s tests` — 226 testes aprovados no
 marco anterior à documentação; `python -m compileall -q backend gui tests main.pyw`
 e `git diff --check` também executados. O total final e os links de Linux/Windows
 serão registrados na PR após o marco integrado.

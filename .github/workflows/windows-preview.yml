@@ -19,6 +19,7 @@ permissions:
 jobs:
   portable-preview:
     runs-on: windows-latest
+    timeout-minutes: 15
     steps:
       - name: Checkout proposed code
         uses: actions/checkout@v4
