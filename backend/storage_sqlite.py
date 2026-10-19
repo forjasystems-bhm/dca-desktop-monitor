@@ -649,7 +649,7 @@ class ArmazemSQLite:
                 "(data_utc,tipo,moeda,origem,destino,quantidade,taxa_ativo,"
                 "receita_usdt,taxa_usdt,observacao,criado_em_utc) "
                 "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
-                (row["Data"]+"T12:00:00Z",tipo,ativo,origem,destino,
+                (row["Data"],tipo,ativo,origem,destino,
                  row["Quantidade"],row["Taxa_Ativo"],row["Receita_USDT"],
                  row["Taxa_USDT"],row["Observacao"],
                  datetime.now(timezone.utc).isoformat())

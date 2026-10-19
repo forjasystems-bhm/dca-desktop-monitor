@@ -62,7 +62,15 @@ def apurar_custodia(saldos_externos, movimentos=(), *, ate: date | None = None):
     resultado_conhecido = True
     transferencias = 0
     vendas = 0
-    for m in sorted(movimentos or (), key=lambda r: (r["Data"], int(r.get("ID", 0)))):
+    # The journal documents a civil date, not a reliable intra-day time.
+    # Persisted IDs are the canonical order for that date. During validation
+    # an unsaved candidate has no ID and must follow persisted events.
+    def sequencia(r):
+        dia = date.fromisoformat(str(r["Data"])[:10])
+        codigo = r.get("ID")
+        return (dia, codigo is None, int(codigo) if codigo is not None else 0)
+
+    for m in sorted(movimentos or (), key=sequencia):
         dia = date.fromisoformat(str(m["Data"])[:10])
         if ate is not None and dia > ate:
             continue

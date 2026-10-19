@@ -125,13 +125,19 @@ class TemporalCustodyTests(unittest.TestCase):
                         self.dm.carregar_posicoes_externas(), movements, ate=cutoff,
                     )
 
-    def test_f03_same_day_ordering_remains_outside_this_fix(self):
-        # Use a destination without a future declaration so this only
-        # characterizes the pre-existing same-day ordering issue, not F01.
+    def test_f03_same_day_chain_respects_journal_sequence(self):
+        # F03: a documented A -> C transfer must precede the C -> D movement
+        # on the same civil date, even though no transaction time is supplied.
         self.move(destino="C")
-        with self.assertRaisesRegex(ErroMovimentacaoCustodia, "saldo insuficiente"):
-            self.move(origem="C", destino="D")
-        self.assertEqual(len(self.dm.carregar_movimentos_custodia()), 1)
+        self.move(origem="C", destino="D", quantidade="0.05")
+        self.assertEqual(len(self.dm.carregar_movimentos_custodia()), 2)
+        positions = {p["Custodia"]: p for p in apurar_custodia(
+            self.dm.carregar_posicoes_externas(),
+            self.dm.carregar_movimentos_custodia(),
+            ate=date(2026, 1, 2),
+        )["saldos"]}
+        self.assertEqual(Decimal(positions["C"]["Quantidade"]), Decimal("0.05"))
+        self.assertEqual(Decimal(positions["D"]["Quantidade"]), Decimal("0.05"))
 
 
 if __name__ == "__main__":
