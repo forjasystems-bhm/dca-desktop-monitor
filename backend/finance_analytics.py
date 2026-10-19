@@ -191,7 +191,7 @@ def calcular_analise_por_periodo(
     # Independent custody journals never rewrite the imported trade ledger.
     from backend.custody_ledger import apurar_custodia
     base_ext = apurar_custodia(
-        saldos_externos or [], movimentos_custodia or [], ate=data_fim,
+        saldos_externos or [], movimentos_custodia or [], ate=data_fim, inicio=data_inicio,
     )
     has_external = bool(base_ext["saldos"] or base_ext["movimentacoes"])
     for lot in base_ext["saldos"]:
@@ -216,10 +216,21 @@ def calcular_analise_por_periodo(
         externo_realizado = lucro_externo - taxa_rede
     else:
         externo_realizado = None
+    for state in ativos.values():
+        state["realizado_csv_historico"] = state["realizado_historico"]
+        state["realizado_csv_periodo"] = state["realizado_periodo"]
+    for coin, result in base_ext["resultados_por_ativo"].items():
+        state = ativos[coin]
+        state.setdefault("realizado_csv_historico", state["realizado_historico"])
+        state.setdefault("realizado_csv_periodo", state["realizado_periodo"])
+        for field in ("realizado_historico", "realizado_periodo"):
+            state[field] = None if result[field] is None else state[field] + result[field]
+    campos = campos + ("realizado_csv_historico", "realizado_csv_periodo")
     totais = {campo: ZERO if campo != "operacoes_periodo" else 0 for campo in campos}
     for estado_moeda in ativos.values():
         for campo in campos:
-            totais[campo] += estado_moeda[campo]
+            totais[campo] = (None if totais[campo] is None or estado_moeda.get(campo) is None
+                             else totais[campo] + estado_moeda[campo])
 
     return {
         "inicio": data_inicio,

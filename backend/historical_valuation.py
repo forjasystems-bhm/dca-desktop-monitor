@@ -137,7 +137,7 @@ def patrimonio_historico_na_data(
 
     # Aggregate includes actual custody disposals only when their opening cost
     # is known. Keep the imported-CSV realized amount separately auditable.
-    lucro_csv = analise["totais"]["realizado_historico"]
+    lucro_csv = analise["totais"]["realizado_csv_historico"]
     lucro_externo = analise["lucro_custodia_usdt"]
     lucro_realizado = (
         lucro_csv + lucro_externo if lucro_externo is not None else None

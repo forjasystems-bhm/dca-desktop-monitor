@@ -52,11 +52,11 @@ class JanelaAnalisePeriodo(ctk.CTkFrame):
 
     @staticmethod
     def _valor(x: Decimal, casas=2):
-        return f"{x:,.{casas}f}"
+        return "Não apurado" if x is None else f"{x:,.{casas}f}"
 
     @staticmethod
     def _positivo(x: Decimal):
-        return NEON_GREEN if x >= 0 else NEON_RED
+        return TEXT_SECONDARY if x is None else NEON_GREEN if x >= 0 else NEON_RED
 
     def _construir(self):
         # Em janelas pequenas, filtros e cartões não devem esconder a tabela.
@@ -573,7 +573,7 @@ class JanelaAnalisePeriodo(ctk.CTkFrame):
             ]
             self._arvore.insert(
                 "", "end", values=valores,
-                tags=("negativo" if s["realizado_periodo"] < 0 else "positivo",),
+                tags=("negativo" if s["realizado_periodo"] is not None and s["realizado_periodo"] < 0 else "positivo",),
             )
         fim = self._analise["fim"]
         data_texto = fim.strftime("%d/%m/%Y") if fim else "última operação"

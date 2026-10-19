@@ -30,3 +30,25 @@ class UnknownRealizedTests(unittest.TestCase):
              movimentos_custodia=[event(Tipo='venda',Taxa_Ativo='0',Receita_USDT='20')])
         self.assertIsNone(p['totais']['realizado'])
         self.assertEqual(p['totais']['realizado_csv'],0)
+
+class PeriodCustodyTests(unittest.TestCase):
+    def test_f07_sale_in_january_not_in_february_and_asset_totals_reconcile(self):
+        sale=event(Tipo='venda',Quantidade='0.2',Taxa_Ativo='0',Receita_USDT='50')
+        jan=calcular_analise_por_periodo([],inicio='2026-01-01',fim='2026-01-31',
+                          saldos_externos=OPEN,movimentos_custodia=[sale])
+        feb=calcular_analise_por_periodo([],inicio='2026-02-01',fim='2026-02-28',
+                          saldos_externos=OPEN,movimentos_custodia=[sale])
+        self.assertEqual(jan['ativos']['BTC']['realizado_periodo'],Decimal('30'))
+        self.assertEqual(feb['ativos']['BTC']['realizado_periodo'],0)
+        self.assertEqual(feb['totais']['realizado_historico'],Decimal('30'))
+        self.assertEqual(feb['totais']['realizado_csv_historico'],0)
+        p=AnalysisEngine.calcular_portfolio([],{'BTC':100},saldos_externos=OPEN,movimentos_custodia=[sale])
+        self.assertEqual(p['BTC']['lucro_realizado'],30)
+        self.assertEqual(p['totais']['realizado'],30)
+
+    def test_f07_closed_unknown_asset_result_is_never_zero_in_period(self):
+        opening=[dict(OPEN[0],Custo_Total_USDT=None)]
+        sale=event(Tipo='venda',Quantidade='1',Taxa_Ativo='0',Receita_USDT='50')
+        jan=calcular_analise_por_periodo([],fim='2026-01-31',saldos_externos=opening,movimentos_custodia=[sale])
+        self.assertIsNone(jan['ativos']['BTC']['realizado_historico'])
+        self.assertIsNone(jan['totais']['realizado_historico'])

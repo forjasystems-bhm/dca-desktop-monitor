@@ -98,7 +98,8 @@ class IntegracaoPreCSVTests(unittest.TestCase):
             movimentos_custodia=reopened.carregar_movimentos_custodia(),
         )
         self.assertEqual(post["ativos"]["ETH"]["quantidade"],Decimal("2.097"))
-        self.assertEqual(post["ativos"]["ETH"]["realizado_historico"],Decimal("20"))
+        self.assertEqual(post["ativos"]["ETH"]["realizado_csv_historico"],Decimal("20"))
+        self.assertEqual(post["ativos"]["ETH"]["realizado_historico"], Decimal("68.550"))
         assert post["lucro_custodia_usdt"] is not None
         backup=backup_antes_atualizacao(reopened.arquivo_db)
         assert verificar_manifesto_sqlite(Path(backup["manifesto"]))["sha256"]==backup["sha256"]

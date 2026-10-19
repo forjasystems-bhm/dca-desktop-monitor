@@ -26,7 +26,8 @@ def numero(valor, nome, *, allow_zero=False):
     return d
 
 
-def apurar_custodia(saldos_externos, movimentos=(), *, ate: date | None = None):
+def apurar_custodia(saldos_externos, movimentos=(), *, ate: date | None = None,
+                     inicio: date | None = None):
     """Reconstruct holdings and cash from attestations and chronological events.
 
     Returns quantities per custody and cost if provable. Revenue from custody
@@ -57,6 +58,7 @@ def apurar_custodia(saldos_externos, movimentos=(), *, ate: date | None = None):
         elif lot["custo"] is not None:
             lot["custo"] += numero(c, "Custo inicial")
 
+    por_ativo = defaultdict(lambda: {"realizado_historico": ZERO, "realizado_periodo": ZERO})
     realizado = ZERO
     custo_taxas_transferencias = ZERO
     resultado_conhecido = True
@@ -133,6 +135,17 @@ def apurar_custodia(saldos_externos, movimentos=(), *, ate: date | None = None):
                 resultado_conhecido = False
             else:
                 realizado += bruto - fee_usdt - custo_venda - custo_fee
+        # Result is attributed to the disposed/transferred asset, preserving
+        # the original trade ledger and distinguishing cumulative from period.
+        impact = (None if custo_fee is None else -custo_fee) if tipo == "transferencia" else (
+            None if custo_venda is None or custo_fee is None
+            else bruto - fee_usdt - custo_venda - custo_fee
+        )
+        item = por_ativo[coin]
+        for field in ("realizado_historico", "realizado_periodo"):
+            if field == "realizado_periodo" and inicio is not None and dia < inicio:
+                continue
+            item[field] = None if item[field] is None or impact is None else item[field] + impact
     # Include declarations after the last movement only in the final balance;
     # their quantities/costs cannot fund or reprice an earlier transaction.
     for _, p in declaracoes[proxima_declaracao:]:
@@ -149,6 +162,7 @@ def apurar_custodia(saldos_externos, movimentos=(), *, ate: date | None = None):
             ativos_com_custo_incompleto.add(coin)
     return {
         "saldos": resultado,
+        "resultados_por_ativo": dict(por_ativo),
         "lucro_vendas_externas_usdt": (realizado if resultado_conhecido else None),
         "custo_taxas_transferencias_usdt": (
             custo_taxas_transferencias if resultado_conhecido else None

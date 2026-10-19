@@ -427,6 +427,15 @@ class AnalysisEngine:
             totais["realizado"] += totais["resultado_custodia_usdt"]
         else:
             totais["realizado"] = None
+        for coin, ext_result in custodia["resultados_por_ativo"].items():
+            row = resultado.setdefault(coin, AnalysisEngine._analisar_moeda([], None))
+            row["lucro_realizado_csv"] = row["lucro_realizado"]
+            gain = ext_result["realizado_historico"]
+            row["lucro_realizado"] = (None if gain is None or row["lucro_realizado"] is None
+                                      else row["lucro_realizado"] + float(gain))
+            row["lucro_total"] = (None if row["lucro_realizado"] is None
+                                  or row["lucro_nao_realizado"] is None else
+                                  row["lucro_realizado"] + row["lucro_nao_realizado"])
         if saldo_usdc > 0:
             preco_usdc = AnalysisEngine._preco_disponivel(precos_atuais.get("USDC"))
             valor_usdc = float(saldo_usdc * Decimal(str(preco_usdc))) if preco_usdc is not None else None
