@@ -16,7 +16,7 @@ from datetime import datetime, timedelta, timezone
 from contextlib import closing
 from decimal import Decimal, InvalidOperation
 
-SCHEMA_VERSION = 7
+SCHEMA_VERSION = 8
 
 COLUNAS = ("Data", "Moeda", "Operacao", "Valor_USDT", "Preco", "Quantidade", "Taxa_BRL")
 CAMPO_FEE = "Taxa_Corretagem_USDT"
@@ -135,10 +135,18 @@ class ArmazemSQLite:
                 "SQLite anteriormente utilizado está ausente. Inicie a manutenção "
                 "de recuperação; não criar carteira vazia de substituição."
             )
+        marker_info = json.loads(marker.read_text(encoding="utf-8")) if marker.exists() else {}
+        if marker_info.get("uuid") and self.arquivo_db.is_file():
+            with closing(sqlite3.connect(self.arquivo_db.as_uri()+"?mode=ro",uri=True)) as conn:
+                actual=conn.execute("SELECT uuid FROM identidade_carteira WHERE id=1").fetchone()
+            if actual is None or actual[0] != marker_info["uuid"]:
+                raise ErroArmazenamento("O banco pertence a outra carteira; recuperação bloqueada.")
         self._inicializar()
-        if not marker.exists():
-            with marker.open("x", encoding="utf-8") as out:
-                json.dump({"formato":"DCA-DATA-IDENTITY-1", "banco":self.arquivo_db.name},out)
+        with closing(self._conectar()) as conn:
+            wallet_uuid = conn.execute("SELECT uuid FROM identidade_carteira WHERE id=1").fetchone()[0]
+        if marker_info.get("uuid") != wallet_uuid:
+            with marker.open("w", encoding="utf-8") as out:
+                json.dump({"formato":"DCA-DATA-IDENTITY-1", "banco":self.arquivo_db.name,"uuid":wallet_uuid},out)
                 out.flush()
                 os.fsync(out.fileno())
         if (auto_importar_legado and self.arquivo_legado is not None
@@ -251,6 +259,8 @@ class ArmazemSQLite:
                 "CREATE UNIQUE INDEX IF NOT EXISTS ux_custodia_comando "
                 "ON movimentacoes_custodia(comando_id) WHERE comando_id IS NOT NULL"
             )
+            conn.execute("CREATE TABLE IF NOT EXISTS identidade_carteira (id INTEGER PRIMARY KEY CHECK(id=1), uuid TEXT NOT NULL UNIQUE)")
+            conn.execute("INSERT OR IGNORE INTO identidade_carteira VALUES (1,?)", (str(uuid4()),))
             conn.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
             conn.execute("COMMIT")
         except Exception:

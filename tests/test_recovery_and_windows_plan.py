@@ -23,7 +23,8 @@ class RecuperacaoOfflineTests(unittest.TestCase):
         temp=tempfile.TemporaryDirectory()
         self.addCleanup(temp.cleanup)
         self.root=Path(temp.name)
-        self.db=self.root/"portfolio.sqlite3"
+        from backend.backend import DataManager
+        self.db=DataManager(data_dir=self.root,auto_import_legacy=False).arquivo_db
         with closing(sqlite3.connect(self.db)) as con:
             con.execute("CREATE TABLE saldos(valor TEXT)")
             con.execute("INSERT INTO saldos VALUES ('ANTES')")

@@ -31,6 +31,11 @@ def ativar_restauracao_offline(
     db = Path(banco_ativo).expanduser().resolve()
     verified = verificar_manifesto_sqlite(manifesto)
     origem = Path(verified["verificacao"]["arquivo"])
+    from backend.database_identity import validar_banco_dca
+    import json
+    marker=db.parent/"data-identity.json"
+    expected=json.loads(marker.read_text(encoding="utf-8")).get("uuid") if marker.is_file() else None
+    validar_banco_dca(origem, carteira_esperada=expected)
     if not db.is_file() or db == origem or db.suffix.lower() not in (".sqlite3",".db"):
         raise ErroBackupSQLite("Banco ativo inexistente, idêntico ao backup ou formato inválido.")
     # External process could still hold a WAL connection: do not move those files.
