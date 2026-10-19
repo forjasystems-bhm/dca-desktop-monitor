@@ -10,6 +10,41 @@ from gui.janela_registro_ui import JanelaRegistroUI
 getcontext().prec = 18
 logger = logging.getLogger(__name__)
 
+_FORMATOS_DATA = (
+    ("%d/%m/%Y %H:%M:%S", False), ("%d/%m/%Y %H:%M", False), ("%d/%m/%Y", True),
+    ("%Y-%m-%d %H:%M:%S", False), ("%Y-%m-%d %H:%M", False), ("%Y-%m-%d", True),
+)
+
+
+def interpretar_data_operacao(texto: str, agora: datetime) -> str:
+    texto = " ".join(texto.split())
+    if not texto:
+        return agora.strftime("%Y-%m-%d %H:%M:%S")
+    for formato, so_dia in _FORMATOS_DATA:
+        try:
+            data = datetime.strptime(texto, formato)
+        except ValueError:
+            continue
+        if so_dia:
+            data = data.replace(hour=12)
+        if data > agora:
+            raise ValueError("A data da operação não pode estar no futuro.")
+        return data.strftime("%Y-%m-%d %H:%M:%S")
+    raise ValueError("Data inválida. Use DD/MM/AAAA HH:MM, por exemplo 18/10/2026 19:30.")
+
+
+def interpretar_cambio(texto: str) -> Optional[Decimal]:
+    texto = texto.strip().replace(",", ".")
+    if not texto:
+        return None
+    try:
+        cambio = Decimal(texto)
+    except InvalidOperation as exc:
+        raise ValueError("Dólar inválido. Use o valor em reais, por exemplo 5,26.") from exc
+    if not cambio.is_finite() or cambio <= Decimal("1.1"):
+        raise ValueError("Dólar inválido. Use o valor em reais, por exemplo 5,26.")
+    return cambio
+
 
 class JanelaRegistro(JanelaRegistroUI):
 
@@ -64,9 +99,11 @@ class JanelaRegistro(JanelaRegistroUI):
 
         moeda = self.get_moeda()
         if not moeda:
+            self.set_cambio_state("normal")
             return
 
         if self._eh_stablecoin(moeda):
+            self.set_cambio_state("disabled", f"Usa o preço {moeda}/BRL acima")
             self.set_combo_tipo_values(TipoOperacao.labels_usdt())
             self.set_label_valor_titulo(f"UNIDADES ({moeda})")
             self.set_label_preco_titulo(f"{moeda}/BRL (informado):")
@@ -88,6 +125,7 @@ class JanelaRegistro(JanelaRegistroUI):
                 "Não converte automaticamente USDC em USDT."
             )
         else:
+            self.set_cambio_state("normal")
             self.set_combo_tipo_values(TipoOperacao.labels_crypto())
             self.set_taxa_corretagem_state("normal")
             preco = self._price_manager.get_preco(moeda)
@@ -302,6 +340,15 @@ class JanelaRegistro(JanelaRegistroUI):
                 erros.append("Taxa de corretagem USDT inválida.")
             if self._eh_stablecoin(self.get_moeda()):
                 erros.append("Taxa de corretagem somente para compra/venda de criptoativos.")
+        try:
+            interpretar_data_operacao(self.get_data_str(), datetime.now())
+        except ValueError as exc:
+            erros.append(str(exc))
+        if not self._eh_stablecoin(self.get_moeda()):
+            try:
+                interpretar_cambio(self.get_cambio_str())
+            except ValueError as exc:
+                erros.append(str(exc))
         return erros
 
     def _salvar(self) -> None:
@@ -318,7 +365,7 @@ class JanelaRegistro(JanelaRegistroUI):
             preco = Decimal(self.get_preco_str())
             taxa_brl = (
                 preco if self._eh_stablecoin(moeda)
-                else (
+                else interpretar_cambio(self.get_cambio_str()) or (
                     self._price_manager.taxa_brl_para_avaliacao()
                     if hasattr(self._price_manager, "taxa_brl_para_avaliacao")
                     else self._price_manager.preco_brl
@@ -332,7 +379,7 @@ class JanelaRegistro(JanelaRegistroUI):
             else:
                 quantidade = valor / preco
 
-            data_hora = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            data_hora = interpretar_data_operacao(self.get_data_str(), datetime.now())
             # Strings decimais até o SQLite: evita perda de precisão por float.
             operacao = [
                 data_hora, moeda, tipo_csv,

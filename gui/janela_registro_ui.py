@@ -188,16 +188,27 @@ class JanelaRegistroUI(ctk.CTkFrame):
         self._lbl_taxa_info = badge(9, TEXT_SECONDARY)
         self._lbl_taxa_info.configure(text="Opcional · deixe vazio se desconhecida")
 
+        label(10, "DATA DA OPERACAO")
+        self._entry_data = entry(10)
+        self._entry_data.configure(placeholder_text="DD/MM/AAAA HH:MM")
+        badge(10).configure(text="Vazio = agora · use a data da corretora")
+
+        label(11, "DOLAR (R$)")
+        self._entry_cambio = entry(11)
+        self._entry_cambio.configure(placeholder_text="ex: 5,26")
+        self._lbl_cambio_info = badge(11)
+        self._lbl_cambio_info.configure(text="Vazio = cotação de agora")
+
         self._lbl_ajuda = ctk.CTkLabel(p, text="", font=_F_CARD_SUB,
                                        text_color=CYAN, anchor="w",
                                        width=360, justify="left")
-        self._lbl_ajuda.grid(row=10, column=1, columnspan=2,
+        self._lbl_ajuda.grid(row=12, column=1, columnspan=2,
                              sticky="w", pady=(4, 0))
 
         self._lbl_erro_saldo = ctk.CTkLabel(p, text="", font=_F_CARD_SUB,
                                             text_color=NEON_RED, anchor="w",
                                             width=360, justify="left")
-        self._lbl_erro_saldo.grid(row=11, column=1, columnspan=2,
+        self._lbl_erro_saldo.grid(row=13, column=1, columnspan=2,
                                   sticky="w", pady=(2, 4))
 
     def _build_footer(self, parent: ctk.CTkFrame):
@@ -245,6 +256,18 @@ class JanelaRegistroUI(ctk.CTkFrame):
 
     def set_taxa_corretagem_state(self, state: str) -> None:
         self._entry_taxa_corretagem.configure(state=state)
+
+    def get_data_str(self) -> str:
+        return self._entry_data.get().strip()
+
+    def get_cambio_str(self) -> str:
+        return self._entry_cambio.get().strip()
+
+    def set_cambio_state(self, state: str, info: str = "Vazio = cotação de agora") -> None:
+        self._entry_cambio.configure(state="normal")
+        self._entry_cambio.delete(0, "end")
+        self._entry_cambio.configure(state=state)
+        self._lbl_cambio_info.configure(text=info)
 
     def get_preco_str(self) -> str:
         return self._entry_preco.get()
@@ -341,6 +364,8 @@ class JanelaRegistroUI(ctk.CTkFrame):
         self._entry_taxa_corretagem.configure(state="normal")
         self._entry_taxa_corretagem.delete(0, "end")
         self._entry_taxa_corretagem.configure(state="disabled")
+        self._entry_data.delete(0, "end")
+        self.set_cambio_state("normal")
         self._lbl_quantidade.configure(text="", text_color=TEXT_SECONDARY)
         self._lbl_preco_atual.configure(text="")
         self._lbl_saldo.configure(text="", text_color=NEON_GREEN)
