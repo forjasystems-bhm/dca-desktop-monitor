@@ -54,7 +54,28 @@ def render(root):
 
 
 def capture(widget, filename, target):
-    render(widget.winfo_toplevel())
+    window=widget.winfo_toplevel()
+    # CTk's delayed titlebar redraw can return focus to the parent. A mapped
+    # widget and nonuniform pixels alone do not prove its own window is visible.
+    window.deiconify()
+    window.lift()
+    window.focus_force()
+    render(window)
+    if sys.platform == "win32":
+        import ctypes
+        from ctypes import wintypes
+        api=ctypes.windll.user32
+        api.GetAncestor.argtypes=[wintypes.HWND,wintypes.UINT]
+        api.GetAncestor.restype=wintypes.HWND
+        api.WindowFromPoint.argtypes=[wintypes.POINT]
+        api.WindowFromPoint.restype=wintypes.HWND
+        expected=api.GetAncestor(window.winfo_id(),2)
+        center=wintypes.POINT(widget.winfo_rootx()+widget.winfo_width()//2,
+                             widget.winfo_rooty()+widget.winfo_height()//2)
+        visible=api.GetAncestor(api.WindowFromPoint(center),2)
+        if visible != expected:
+            raise RuntimeError("Captura obstruída por outra janela: "+filename)
+        print("FRONT_WINDOW_VISIBLE="+filename,flush=True)
     x, y = widget.winfo_rootx(), widget.winfo_rooty()
     width, height = widget.winfo_width(), widget.winfo_height()
     if width < 650 or height < 290:
@@ -194,8 +215,9 @@ def main():
                 auto_import_legacy=False,
             )
             janela_inicio = ctk.CTkToplevel(root)
+            janela_inicio.transient(root)
             janela_inicio.title("DCA Monitor · Primeiro acesso")
-            janela_inicio.geometry("1020x760+20+20")
+            janela_inicio.geometry(f"{min(1020,sw-60)}x{min(760,sh-110)}+20+20")
             assistente = JanelaPrimeiroUso(
                 janela_inicio, fresh, on_change=lambda: None,
                 on_begin_empty=lambda: janela_inicio.destroy(),
@@ -212,6 +234,14 @@ def main():
             )
             render(janela_inicio)
             assert assistente._externo_flag.get()
+            canvas=assistente._parent_canvas
+            field=assistente._motivo_correcao
+            field_y=canvas.canvasy(field.winfo_rooty()-canvas.winfo_rooty())
+            height=canvas.bbox("all")[3]
+            canvas.yview_moveto(max(0,(field_y-300)/height))
+            render(janela_inicio)
+            relative_y=field.winfo_rooty()-canvas.winfo_rooty()
+            assert 0 <= relative_y <= canvas.winfo_height()-field.winfo_height()
             capture(janela_inicio, "11_conciliacao_saldo_fora_csv.png", target)
             assistente._parent_canvas.yview_moveto(1.0)
             render(janela_inicio)
@@ -219,6 +249,7 @@ def main():
             janela_inicio.destroy()
             app._abrir_configuracoes()
             render(root)
+            app._janela_aplicativo.geometry(f"{min(960,sw-60)}x{min(720,sh-110)}+20+20")
             render(app._janela_aplicativo)
             assert app._janela_aplicativo._btn_instalar.cget("state") == "disabled"
             capture(app._janela_aplicativo, "13_configuracoes_windows.png", target)

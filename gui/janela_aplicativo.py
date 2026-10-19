@@ -23,6 +23,7 @@ class JanelaAplicativo(ctk.CTkToplevel):
     def __init__(self, parent, data_manager, *, ao_restaurar=None,
                  ao_alterar_preferencia=None):
         super().__init__(parent)
+        self.transient(parent)
         self._tasks = UiDispatcher(self)
         self.title("DCA Monitor · Aplicativo e manutenção")
         self.geometry("960x720+70+45")

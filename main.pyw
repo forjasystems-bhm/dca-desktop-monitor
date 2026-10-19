@@ -119,6 +119,7 @@ class PortfolioDCA:
             self._primeiro_uso_janela.focus_force()
             return
         janela = ctk.CTkToplevel(self.janela)
+        janela.transient(self.janela)
         self._primeiro_uso_janela = janela
         janela.title("DCA Monitor · Primeira utilização e dados anteriores")
         largura = max(940, min(1030, janela.winfo_screenwidth() - 70))
