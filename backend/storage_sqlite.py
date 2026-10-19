@@ -16,6 +16,8 @@ from datetime import datetime, timedelta, timezone
 from contextlib import closing
 from decimal import Decimal, InvalidOperation
 
+SCHEMA_VERSION = 7
+
 COLUNAS = ("Data", "Moeda", "Operacao", "Valor_USDT", "Preco", "Quantidade", "Taxa_BRL")
 CAMPO_FEE = "Taxa_Corretagem_USDT"
 COLUNAS_EXPORTACAO = COLUNAS + (CAMPO_FEE,)
@@ -146,7 +148,9 @@ class ArmazemSQLite:
         if self.arquivo_db.is_file() and self.arquivo_db.stat().st_size:
             with closing(sqlite3.connect(self.arquivo_db.as_uri() + "?mode=ro", uri=True)) as verify:
                 version = verify.execute("PRAGMA user_version").fetchone()[0]
-            if version < 7:
+            if version > SCHEMA_VERSION:
+                raise ErroArmazenamento("Banco de versão futura incompatível; nenhuma migração executada.")
+            if version < SCHEMA_VERSION:
                 from backend.backup_sqlite import criar_backup_sqlite
                 criar_backup_sqlite(
                     self.arquivo_db, self.diretorio / "backups" / "sqlite",
@@ -155,6 +159,7 @@ class ArmazemSQLite:
         conn = self._conectar()
         try:
             conn.execute("PRAGMA journal_mode=WAL")
+            conn.execute("BEGIN IMMEDIATE")
             conn.execute("""CREATE TABLE IF NOT EXISTS operacoes (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 data TEXT NOT NULL, moeda TEXT NOT NULL, operacao TEXT NOT NULL,
@@ -232,7 +237,12 @@ class ArmazemSQLite:
                 "CREATE UNIQUE INDEX IF NOT EXISTS ux_custodia_comando "
                 "ON movimentacoes_custodia(comando_id) WHERE comando_id IS NOT NULL"
             )
-            conn.execute("PRAGMA user_version=7")
+            conn.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
+            conn.execute("COMMIT")
+        except Exception:
+            if conn.in_transaction:
+                conn.execute("ROLLBACK")
+            raise
         finally:
             conn.close()
 
