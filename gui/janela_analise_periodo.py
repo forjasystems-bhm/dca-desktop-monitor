@@ -46,6 +46,7 @@ class JanelaAnalisePeriodo(ctk.CTkFrame):
         self._dados = data_manager
         self._filtro_periodo = ctk.StringVar(value="Todo o histórico")
         self._filtro_ativo = ctk.StringVar(value="Todos os ativos")
+        self._moeda_resultado = ctk.StringVar(value="USDT")
         self._indicadores = {}
         self._busca_historica_ativa = False
         self._ultimo_historico = None
@@ -109,7 +110,12 @@ class JanelaAnalisePeriodo(ctk.CTkFrame):
         self._fim.grid(row=1, column=3, padx=6, pady=(2, 10), sticky="ew")
         ctk.CTkButton(
             filtros, text="Aplicar", width=90, command=self.atualizar
-        ).grid(row=1, column=4, padx=(5, 12), pady=(2, 10))
+        ).grid(row=1, column=4, padx=(5, 8), pady=(2, 10))
+        ctk.CTkOptionMenu(
+            filtros, variable=self._moeda_resultado,
+            values=["USDT", "BRL histórico"], width=126,
+            command=lambda _: self._renderizar(),
+        ).grid(row=1, column=5, padx=(5, 10), pady=(2, 10))
         self._on_periodo("Todo o histórico", recarregar=False)
         self._montar_avaliacao_historica()
 
@@ -518,13 +524,20 @@ class JanelaAnalisePeriodo(ctk.CTkFrame):
     def atualizar(self):
         try:
             inicio, fim = self._datas()
+            ops = (self._dados.carregar_operacoes_precisas()
+                   if hasattr(self._dados, "carregar_operacoes_precisas")
+                   else self._dados.carregar_operacoes())
+            iniciais = self._dados.carregar_posicoes_iniciais()
+            externos = self._dados.carregar_posicoes_externas()
+            movimentos = self._dados.carregar_movimentos_custodia()
             self._analise = calcular_analise_por_periodo(
-                (self._dados.carregar_operacoes_precisas()
-                 if hasattr(self._dados, "carregar_operacoes_precisas")
-                 else self._dados.carregar_operacoes()), inicio, fim,
-                saldos_iniciais=self._dados.carregar_posicoes_iniciais(),
-                saldos_externos=self._dados.carregar_posicoes_externas(),
-                movimentos_custodia=self._dados.carregar_movimentos_custodia(),
+                ops, inicio, fim, saldos_iniciais=iniciais,
+                saldos_externos=externos, movimentos_custodia=movimentos,
+            )
+            from backend.finance_brl import apurar_brl_historico
+            self._analise_brl = apurar_brl_historico(
+                ops, inicio=inicio, fim=fim, saldos_iniciais=iniciais,
+                saldos_externos=externos, movimentos_custodia=movimentos,
             )
             itens = ["Todos os ativos", *self._analise["ativos"].keys()]
             self._ativos.configure(values=itens)
@@ -549,41 +562,49 @@ class JanelaAnalisePeriodo(ctk.CTkFrame):
         exibidos = {selecionado: todos[selecionado]} if selecionado in todos else (
             todos if selecionado == "Todos os ativos" else {}
         )
+        brl = self._moeda_resultado.get() == "BRL histórico"
+        unidade = "BRL" if brl else "USDT"
+        modelo = self._analise_brl if brl else self._analise
         registro = (
-            self._analise["totais"] if selecionado == "Todos os ativos"
-            else exibidos.get(selecionado)
+            modelo["totais"] if selecionado == "Todos os ativos"
+            else modelo["ativos"].get(selecionado)
         )
         if registro is None:
             return
         for key, lbl in self._indicadores.items():
-            valor = registro[key]
+            valor = registro.get(key)
             lbl.configure(
-                text=f"{self._valor(valor)} USDT",
+                text=f"{self._valor(valor)} {unidade}",
                 text_color=self._positivo(valor) if key.startswith("realizado_") else CYAN,
             )
         for item in self._arvore.get_children():
             self._arvore.delete(item)
-        for nome, s in exibidos.items():
+        for nome, s_usdt in exibidos.items():
+            s = modelo["ativos"].get(nome, {})
             valores = [
-                nome, self._valor(s["compras_historicas"]),
-                self._valor(s["compras_periodo"]),
-                self._valor(s["vendas_periodo"]),
-                self._valor(s["realizado_periodo"]),
-                self._valor(s["realizado_historico"]),
-                ("Não apurado" if nome in self._analise["ativos_sem_custo"]
-                 else self._valor(s["custo_aberto"])),
-                self._valor(s["quantidade"], 8),
+                nome, self._valor(s.get("compras_historicas")),
+                self._valor(s.get("compras_periodo")),
+                self._valor(s.get("vendas_periodo")),
+                self._valor(s.get("realizado_periodo")),
+                self._valor(s.get("realizado_historico")),
+                (self._valor(s.get("custo_aberto")) if brl else
+                 ("Não apurado" if nome in self._analise["ativos_sem_custo"]
+                  else self._valor(s_usdt["custo_aberto"]))),
+                self._valor(s_usdt["quantidade"], 8),
             ]
             self._arvore.insert(
                 "", "end", values=valores,
-                tags=("negativo" if s["realizado_periodo"] is not None and s["realizado_periodo"] < 0 else "positivo",),
+                tags=("negativo" if s.get("realizado_periodo") is not None and s["realizado_periodo"] < 0 else "positivo",),
             )
         fim = self._analise["fim"]
         data_texto = fim.strftime("%d/%m/%Y") if fim else "última operação"
         msg = (f"Custo da posição apurado até {data_texto}. "
                "Resultados realizados calculados pelo custo médio de todas as compras anteriores. "
                "Avalie o patrimônio histórico separadamente pelas cotações fechadas registradas no SQLite. "
-               "Valores em USDT; não são lucro fiscal em BRL.")
+               + ("BRL histórico: câmbio da operação, nunca câmbio atual. "
+                  "Sem câmbio/custo/corretagem documentados: não apurado. "
+                  "Não é declaração fiscal." if brl
+                  else "Valores em USDT; não são lucro fiscal em BRL."))
         if selecionado == "Todos os ativos":
             msg += (
                 f" Aportes externos no período: "
@@ -605,6 +626,8 @@ class JanelaAnalisePeriodo(ctk.CTkFrame):
                     f" Atenção: {sem_taxa} operação(ões) sem taxa informada; "
                     "resultado não comprova lucro líquido integral."
                 )
+        if brl and modelo.get("avisos"):
+            msg += " Pendências BRL: " + "; ".join(modelo["avisos"][:5])
         if self._analise.get("ativos_sem_custo"):
             msg += (
                 " Custo inicial desconhecido: "

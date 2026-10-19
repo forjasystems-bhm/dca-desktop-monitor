@@ -82,6 +82,43 @@ class JanelaDistribuicao(ctk.CTkFrame):
     def set_countdown(self, segundos: int):
         self._badge.set_countdown(segundos)
 
+    def _mostrar_pendencias(self):
+        from backend.ledger_diagnostics import diagnosticar_operacoes
+        try:
+            issues = diagnosticar_operacoes(
+                self._data_manager.carregar_operacoes_precisas()
+            )
+        except Exception as exc:
+            messagebox.showerror("Conferência indisponível", str(exc), parent=self)
+            return
+        janela = ctk.CTkToplevel(self)
+        janela.title("DCA — Conferir lançamentos sem alterar dados")
+        janela.geometry("870x540")
+        ctk.CTkLabel(
+            janela, text=f"Pendências: {len(issues)}. Seus dados não foram modificados.",
+            font=ctk.CTkFont("Segoe UI", 15, "bold"),
+            text_color=CYAN,
+        ).pack(anchor="w", padx=17, pady=12)
+        campo = ctk.CTkTextbox(janela, wrap="word")
+        campo.pack(fill="both", expand=True, padx=17, pady=8)
+        if not issues:
+            campo.insert("end", "Nenhuma divergência individual encontrada. "
+                         "A conciliação global ainda deve ser verificada.")
+        for issue in issues:
+            delta = issue["diferenca_usdt"]
+            campo.insert("end", (
+                f"Operação {issue['operacao']} · {issue['moeda']} · {issue['data']}\n"
+                + issue["erro"] + "\n"
+                + (f"Quantidade × preço menos valor: {delta} USDT\n"
+                   if delta is not None else "")
+                + issue["orientacao"] + "\n\n"
+            ))
+        campo.configure(state="disabled")
+        ctk.CTkButton(janela, text="Fechar", command=janela.destroy
+                      ).pack(anchor="e", padx=17, pady=12)
+        janela.lift()
+        return janela
+
     def _build_ui(self):
         self.pack(fill="both", expand=True, padx=10, pady=(3, 10))
 
@@ -90,6 +127,11 @@ class JanelaDistribuicao(ctk.CTkFrame):
 
         self._badge = ConexaoBadge(toolbar)
         self._badge.pack(side=tk.LEFT, padx=(6, 5), pady=2)
+        ctk.CTkButton(
+            toolbar, text="Conferir lançamentos", width=165,
+            fg_color=BG_CARD, text_color=CYAN,
+            command=self._mostrar_pendencias,
+        ).pack(side=tk.LEFT, padx=5, pady=2)
 
         self._brl_toggle = BRLToggle(
             toolbar,
