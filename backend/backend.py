@@ -339,7 +339,8 @@ class AnalysisEngine:
             "saldos_externos_declarados": len(saldos_externos),
             "movimentacoes_custodia": custodia["movimentacoes"],
             "resultado_custodia_usdt": (
-                float(custodia["lucro_vendas_externas_usdt"])
+                float(custodia["lucro_vendas_externas_usdt"]
+                      - custodia["custo_taxas_transferencias_usdt"])
                 if custodia["lucro_vendas_externas_usdt"] is not None else None
             ),
             "custo_taxas_transferencias_usdt": (
@@ -422,7 +423,7 @@ class AnalysisEngine:
                 totais["valor_atual"] += float(ext["q"]) * spot
 
         if custodia["lucro_vendas_externas_usdt"] is not None:
-            totais["realizado"] += float(custodia["lucro_vendas_externas_usdt"])
+            totais["realizado"] += totais["resultado_custodia_usdt"]
         if saldo_usdc > 0:
             preco_usdc = AnalysisEngine._preco_disponivel(precos_atuais.get("USDC"))
             valor_usdc = float(saldo_usdc * Decimal(str(preco_usdc))) if preco_usdc is not None else None
