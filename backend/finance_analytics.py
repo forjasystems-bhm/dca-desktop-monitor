@@ -10,6 +10,8 @@ from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
+from backend.operation_integrity import venda_excede_posicao
+
 
 class ErroAnaliseFinanceira(ValueError):
     """Impede exibir números silenciosamente incorretos."""
@@ -167,7 +169,7 @@ def calcular_analise_por_periodo(
                 s["compras_periodo"] += valor
                 s["operacoes_periodo"] += 1
         else:
-            if s["quantidade"] == ZERO or quantidade > s["quantidade"]:
+            if s["quantidade"] <= ZERO or venda_excede_posicao(s["quantidade"], quantidade):
                 raise ErroAnaliseFinanceira(
                     f"Registro {linha}: venda de {moeda} excede a posição disponível."
                 )
@@ -175,11 +177,11 @@ def calcular_analise_por_periodo(
                 raise ErroAnaliseFinanceira(
                     f"Registro {linha}: venda de {moeda} sem custo inicial conhecido."
                 )
-            custo_venda = s["custo_aberto"] * quantidade / s["quantidade"]
+            custo_venda = s["custo_aberto"] * min(quantidade, s["quantidade"]) / s["quantidade"]
             realizado = valor - taxa - custo_venda
             s["quantidade"] -= quantidade
             s["custo_aberto"] -= custo_venda
-            if s["quantidade"] == ZERO:
+            if s["quantidade"] <= ZERO:
                 s["custo_aberto"] = ZERO
             s["vendas_historicas"] += valor
             s["realizado_historico"] += realizado

@@ -10,6 +10,9 @@ from collections import defaultdict
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 
+from backend.ledger_diagnostics import LIMITE_DIVERGENCIA_ESTIMAVEL
+from backend.operation_integrity import venda_excede_posicao
+
 ZERO = Decimal("0")
 VALUE_FIELDS = ("compras_historicas", "compras_periodo", "vendas_periodo",
                 "realizado_historico", "realizado_periodo", "custo_aberto")
@@ -32,12 +35,13 @@ def _date(value):
 
 def apurar_brl_historico(operacoes, *, inicio=None, fim=None,
                          saldos_iniciais=None, saldos_externos=None,
-                         movimentos_custodia=None):
+                         movimentos_custodia=None, estimar=False):
     start, end = _date(inicio), _date(fim)
     if start and end and start > end:
         raise ValueError("Período BRL inválido.")
     def new_state():
-        return {**{key: ZERO for key in VALUE_FIELDS}, "quantidade": ZERO}
+        return {**{key: ZERO for key in VALUE_FIELDS}, "quantidade": ZERO,
+                "estimado": False}
     states = defaultdict(new_state)
     reasons = set()
     for item in (saldos_iniciais or []):
@@ -91,13 +95,20 @@ def apurar_brl_historico(operacoes, *, inicio=None, fim=None,
             reasons.add(f"{coin}, operação {n}: câmbio/valores históricos indisponíveis.")
         if qty is None or qty <= ZERO:
             continue
+        if estimar and fee is None:
+            fee = ZERO
+            state["estimado"] = True
         # Known divergence requires reconciliation, NOT a fictitious fee.
         if unit is None or value is None or abs(qty * unit - value) > min(
             max(Decimal("0.01"), unit * Decimal("0.00000001")),
             max(Decimal("0.00000001"), value * Decimal("0.0001"))
         ):
-            valid = False
-            reasons.add(f"{coin}, operação {n}: quantidade × preço diverge de Valor_USDT.")
+            if (estimar and unit is not None and value is not None and value > ZERO
+                    and abs(qty * unit - value) <= value * LIMITE_DIVERGENCIA_ESTIMAVEL):
+                state["estimado"] = True
+            else:
+                valid = False
+                reasons.add(f"{coin}, operação {n}: quantidade × preço diverge de Valor_USDT.")
         is_buy = str(op.get("Operacao", "")).lower() == "compra"
         amount = value * fx if valid else None
         if is_buy:
@@ -124,9 +135,9 @@ def apurar_brl_historico(operacoes, *, inicio=None, fim=None,
                     state["vendas_periodo"] + amount
                     if state["vendas_periodo"] is not None and amount is not None else None)
             available = state["quantidade"]
-            cost = (state["custo_aberto"] * qty / available
-                    if available >= qty and available > ZERO and
-                    state["custo_aberto"] is not None else None)
+            vendavel = available > ZERO and not venda_excede_posicao(available, qty)
+            cost = (state["custo_aberto"] * min(qty, available) / available
+                    if vendavel and state["custo_aberto"] is not None else None)
             gain = (amount - fee * fx - cost
                     if amount is not None and fee is not None and cost is not None else None)
             for key in ("realizado_historico", "realizado_periodo"):
@@ -137,11 +148,11 @@ def apurar_brl_historico(operacoes, *, inicio=None, fim=None,
             if gain is None:
                 reasons.add(f"{coin}, operação {n}: lucro BRL não apurável com os dados informados.")
             state["quantidade"] -= qty
-            if state["quantidade"] < ZERO:
+            if not vendavel:
                 reasons.add(f"{coin}, operação {n}: quantidade insuficiente.")
                 state["quantidade"] = ZERO
                 state["custo_aberto"] = None
-            elif state["quantidade"] == ZERO:
+            elif state["quantidade"] <= ZERO:
                 state["custo_aberto"] = ZERO
             elif cost is not None:
                 state["custo_aberto"] -= cost
@@ -153,4 +164,5 @@ def apurar_brl_historico(operacoes, *, inicio=None, fim=None,
         values = [item[key] for item in states.values()]
         totals[key] = None if any(x is None for x in values) else sum(values, ZERO)
     return {"ativos": dict(sorted(states.items())), "totais": totals,
-            "avisos": sorted(reasons), "unidade": "BRL"}
+            "avisos": sorted(reasons), "unidade": "BRL",
+            "estimado": any(item["estimado"] for item in states.values())}

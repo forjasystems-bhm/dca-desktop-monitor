@@ -1068,7 +1068,8 @@ class ArmazemSQLite:
         try:
             con.execute("BEGIN IMMEDIATE")
             livro = self._livro_transacional(con)
-            validar_livro(livro + [row], self._saldos_transacionais(con))
+            validar_livro(livro + [row], self._saldos_transacionais(con),
+                          divergencias_legadas=self._divergencias_preexistentes(livro))
             self._inserir(con, row)
             con.execute("COMMIT")
             self._apos_gravacao()
@@ -1079,6 +1080,15 @@ class ArmazemSQLite:
             raise
         finally:
             con.close()
+
+    @staticmethod
+    def _divergencias_preexistentes(livro, exceto=()):
+        from backend.ledger_diagnostics import diagnosticar_operacoes
+        return {
+            issue["operacao"] for issue in diagnosticar_operacoes(livro)
+            if issue["operacao"] not in exceto
+            and issue["diferenca_usdt"] not in (None, 0)
+        }
 
     @staticmethod
     def _auditar_operacao(con, codigo, acao, antes, depois, motivo):
@@ -1120,19 +1130,18 @@ class ArmazemSQLite:
                     "Exclua e registre novamente após verificar os saldos."
                 )
             anterior=dict(livro[indice])
+            relacao_intacta = all(
+                Decimal(str(anterior[campo])) == Decimal(str(row[campo]))
+                for campo in ("Valor_USDT", "Preco", "Quantidade")
+            )
+            exceto = {indice+1} if conciliacao or not relacao_intacta else set()
+            permitidas=self._divergencias_preexistentes(livro, exceto)
             livro[indice] = row
-            permitidas=set()
             if conciliacao:
-                from backend.ledger_diagnostics import diagnosticar_operacoes
                 from backend.operation_integrity import validar_campos
                 # Only unchanged OTHER records whose sole defect is the gross
                 # relation may remain pending. The corrected row is fully valid.
                 validar_campos(row,indice+1)
-                for issue in diagnosticar_operacoes(livro):
-                    pos=issue['operacao']
-                    if pos != indice+1 and issue['diferenca_usdt'] not in (None,0):
-                        validar_campos(livro[pos-1],pos,conferir_relacao=False)
-                        permitidas.add(pos)
             validar_livro(livro, self._saldos_transacionais(con),divergencias_legadas=permitidas)
             con.execute(
                 "UPDATE operacoes SET data=?, moeda=?, operacao=?, valor_usdt=?, "
@@ -1163,7 +1172,8 @@ class ArmazemSQLite:
             livro = self._livro_transacional(con)
             anterior=dict(livro[indice])
             del livro[indice]
-            validar_livro(livro, self._saldos_transacionais(con))
+            validar_livro(livro, self._saldos_transacionais(con),
+                          divergencias_legadas=self._divergencias_preexistentes(livro))
             con.execute("DELETE FROM operacoes WHERE id=?", (id_operacao,))
             self._auditar_operacao(con,id_operacao,"exclusao",anterior,None,motivo)
             con.execute("COMMIT")

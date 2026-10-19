@@ -12,11 +12,16 @@ from decimal import Decimal, InvalidOperation
 ZERO = Decimal("0")
 CENTAVO_USDT = Decimal("0.01")
 TOL_QUANTIDADE = Decimal("0.00000001")
+TOL_VENDA_TOTAL = Decimal("0.005")
 COLUNAS = ("Data", "Moeda", "Operacao", "Valor_USDT", "Preco", "Quantidade", "Taxa_BRL")
 
 
 class ErroIntegridadeFinanceira(ValueError):
     """Uma operação tornaria o livro de operações inconsistente."""
+
+
+def venda_excede_posicao(posicao: Decimal, quantidade: Decimal) -> bool:
+    return quantidade - posicao > quantidade * TOL_VENDA_TOTAL
 
 
 def _numero(registro: dict, campo: str, linha: int, *, positivo=True) -> Decimal:
@@ -88,14 +93,11 @@ def validar_livro(operacoes: list[dict], saldos_iniciais: list[dict] | None = No
                   *, divergencias_legadas=()) -> None:
     """Valida TODOS os saldos em ordem temporal antes de confirmar a transação.
 
-    Rejeita saldo USDT negativo, venda de quantidade não possuída e operações
-    inválidas em qualquer ponto — inclusive decorrentes de editar o passado.
+    Rejeita saldo USDT negativo no fim de cada dia, venda de quantidade não
+    possuída e operações inválidas — inclusive decorrentes de editar o passado.
     """
     registros = []
     for posicao, op in enumerate(operacoes, 1):
-        # Only the explicit reconciliation path can carry forward an unchanged
-        # legacy gross/price discrepancy. All other fields and temporal balances
-        # remain strict. Ordinary inserts/edits never supply this exception.
         validar_campos(op, posicao, conferir_relacao=posicao not in divergencias_legadas)
         registros.append((str(op["Data"]), posicao, op))
     registros.sort(key=lambda x: (x[0], x[1]))
@@ -115,7 +117,7 @@ def validar_livro(operacoes: list[dict], saldos_iniciais: list[dict] | None = No
             posicoes[moeda] += qtd
             if inicial.get("Custo_Total_USDT") is None:
                 base_desconhecida.add(moeda)
-    for _, indice, op in registros:
+    for ordem, (data_op, indice, op) in enumerate(registros):
         for inicial in saldos_iniciais or []:
             if str(op["Data"])[:10] < str(inicial["Data"])[:10]:
                 raise ErroIntegridadeFinanceira(
@@ -149,16 +151,18 @@ def validar_livro(operacoes: list[dict], saldos_iniciais: list[dict] | None = No
                     "Antes de vender, documente o custo total do saldo inicial; "
                     "não inventar lucro ou custo zero."
                 )
-            posicoes[moeda] -= qtd
-            if posicoes[moeda] < ZERO:
+            if venda_excede_posicao(posicoes[moeda], qtd):
                 raise ErroIntegridadeFinanceira(
                     f"Operação {indice} ({moeda}, {op['Data']}): "
                     "venda superior à posição disponível nessa data."
                 )
+            posicoes[moeda] -= qtd
             caixa += valor - taxa
-        if caixa < ZERO:
+        fim_do_dia = (ordem + 1 == len(registros)
+                      or registros[ordem + 1][0][:10] != data_op[:10])
+        if caixa < ZERO and fim_do_dia:
             raise ErroIntegridadeFinanceira(
                 f"Operação {indice} ({moeda}, {op['Data']}): "
-                f"saldo USDT negativo ({caixa}). Registre ou corrija "
-                "o aporte anterior antes de continuar."
+                f"saldo USDT negativo no fim do dia {data_op[:10]} ({caixa}). "
+                "Registre ou corrija o aporte anterior antes de continuar."
             )
