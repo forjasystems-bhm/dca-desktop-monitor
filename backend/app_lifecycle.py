@@ -100,7 +100,7 @@ def verificar_release_estavel(*, versao_atual=APP_VERSION, fetch=None):
         state, msg = "disponivel", f"Versão estável {version} encontrada."
     else:
         state, msg = "atual", f"Nenhuma versão mais nova que {versao_atual}."
-    os_type = platform.system()
+    os_type = platform.system() if platform.machine().lower() in ('amd64','x86_64') else None
     archive = {
         "Windows": f"DCA-Monitor-v{version}-Windows-x64.zip",
         "Linux": f"DCA-Monitor-v{version}-Linux-x64.tar.gz",
@@ -160,6 +160,11 @@ def baixar_atualizacao_verificada(info: dict, destino: Path) -> dict:
                 f"DCA-Monitor-v{versao}-Linux-x64.tar.gz",
             )):
         raise ValueError("Manifesto da atualização inválido.")
+    if not comparar_versoes(APP_VERSION,versao)['elegivel']:
+        raise ValueError('Atualização não é superior à versão instalada.')
+    if (not isinstance(pacote.get('tamanho'),int) or
+            not 1024 < pacote['tamanho'] < 400_000_000):
+        raise ValueError('Tamanho da atualização inválido.')
     target = Path(destino).expanduser().resolve()
     if target.name != pacote["nome"] or target.exists():
         raise ValueError("Destino incompatível ou arquivo já existente.")
@@ -211,3 +216,34 @@ def baixar_atualizacao_verificada(info: dict, destino: Path) -> dict:
         raise
     finally:
         Path(temporary).unlink(missing_ok=True)
+
+
+def preparar_atualizacao_manual(info, arquivo, banco, destino_backup):
+    """Verify downloaded bytes AGAIN and prove recovery before manual switching.
+
+    No executable replacement or activation is supported by this portable build.
+    This is a recoverable preparation, not an installation success receipt.
+    """
+    from backend.recovery_bundle import exportar_pacote, recuperar_pacote
+    from backend.windows_lifecycle import verificar_separacao_dados
+    if not info.get('download_disponivel') or not comparar_versoes(
+            APP_VERSION,info.get('versao_publicada',''))['elegivel']:
+        raise ValueError('Atualização superior não confirmada.')
+    package=info.get('pacote') or {}
+    path=Path(arquivo).resolve()
+    if (path.name != package.get('nome') or not path.is_file() or
+            path.stat().st_size != package.get('tamanho')):
+        raise ValueError('Pacote de atualização ausente ou incompatível.')
+    with path.open('rb') as source:
+        digest=hashlib.file_digest(source,'sha256').hexdigest()
+    if digest != package.get('sha256'):
+        raise ValueError('SHA-256 do pacote mudou; atualização recusada.')
+    if getattr(__import__('sys'),'frozen',False):
+        verificar_separacao_dados(Path(__import__('sys').executable).parent,Path(banco))
+    backup=exportar_pacote(banco,destino_backup)
+    with tempfile.TemporaryDirectory(prefix='dca-update-recovery-check-') as tmp:
+        restored=recuperar_pacote(destino_backup,Path(tmp)/'verification')
+    return dict(backup=backup,carteira_verificada=restored['uuid'],instalado=False,
+                mensagem='Backup portátil recuperado e conferido. Instalação automática indisponível; '
+                         'feche o aplicativo e extraia a pasta completa em um destino novo. '
+                         'Preserve a pasta anterior e atualize o atalho após validar a nova abertura.')

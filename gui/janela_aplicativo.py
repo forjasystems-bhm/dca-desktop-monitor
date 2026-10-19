@@ -9,6 +9,7 @@ import customtkinter as ctk
 from backend.app_lifecycle import (
     APP_VERSION, carregar_preferencias, salvar_preferencias,
     verificar_release_estavel, baixar_atualizacao_verificada,
+    preparar_atualizacao_manual,
 )
 from backend.backup_sqlite import (
     verificar_manifesto_sqlite, preparar_restauracao_sqlite,
@@ -33,6 +34,7 @@ class JanelaAplicativo(ctk.CTkToplevel):
         self._on_pref=ao_alterar_preferencia
         self._manifesto_escolhido=None
         self._atualizacao_encontrada=None
+        self._download_verificado=None
         self._pref=carregar_preferencias(self._db._store.diretorio)
         self.configure(fg_color=BG_SURFACE)
         wrap=ctk.CTkScrollableFrame(
@@ -64,6 +66,13 @@ class JanelaAplicativo(ctk.CTkToplevel):
             command=self._baixar_atualizacao,
         )
         self._btn_instalar.pack(anchor="w",padx=12,pady=(4,12))
+        self._btn_backup_atualizacao=ctk.CTkButton(updates,text='Preparar atualização (backup recuperável)',
+            state='disabled',fg_color=BG_INPUT,command=self._preparar_atualizacao)
+        self._btn_backup_atualizacao.pack(anchor='w',padx=12,pady=4)
+        ctk.CTkButton(updates,text='Instalar atualização — indisponível nesta versão portátil',
+                      state='disabled',fg_color=BG_INPUT).pack(anchor='w',padx=12,pady=4)
+        self._texto(updates,'Instalação automática e rollback automático ainda não são suportados. '
+                    'A preparação verifica o backup; não troca executáveis nem atalhos.')
 
         shortcuts=self._box(wrap,"Atalho da Área de Trabalho")
         self.status_atalho=self._texto(
@@ -154,6 +163,8 @@ class JanelaAplicativo(ctk.CTkToplevel):
 
     def _verificar_atualizacoes(self):
         self._atualizacao_encontrada = None
+        self._download_verificado = None
+        self._btn_backup_atualizacao.configure(state='disabled')
         self._btn_instalar.configure(state="disabled")
         self.status_atualizacao.configure(text="Verificando releases oficiais...")
         def tarefa():
@@ -207,6 +218,8 @@ class JanelaAplicativo(ctk.CTkToplevel):
                     self.status_atualizacao.configure(
                         text="Download não concluído: " + error)
                 else:
+                    self._download_verificado=(info,result['arquivo'])
+                    self._btn_backup_atualizacao.configure(state='normal')
                     self.status_atualizacao.configure(
                         text="Download e SHA-256 verificados em "
                         + result["arquivo"] +
@@ -214,6 +227,31 @@ class JanelaAplicativo(ctk.CTkToplevel):
                         "manual. A versão atual e seu SQLite continuam intactos.")
             self._tasks.post(completed)
         self._tasks.run(task)
+
+    def _preparar_atualizacao(self):
+        if not self._download_verificado:
+            return
+        if not messagebox.askyesno('Preparar atualização',
+            'Criar e testar um backup portátil antes da instalação manual? '
+            'Nenhum executável será substituído.',parent=self):
+            return
+        target=filedialog.asksaveasfilename(parent=self,title='Salvar backup portátil recuperável',
+            defaultextension='.zip',initialfile='DCA-antes-atualizacao.zip',filetypes=[('Backup DCA','*.zip')])
+        if not target:
+            return
+        info,path=self._download_verificado
+        self._btn_backup_atualizacao.configure(state='disabled')
+        def worker():
+            try:
+                result=preparar_atualizacao_manual(info,path,self._db.arquivo_db,Path(target))
+                text=result['mensagem']+' Backup: '+result['backup']['pacote']
+            except Exception as exc:
+                text='Preparação recusada. Preserve a instalação atual: '+str(exc)
+            def done():
+                self.status_atualizacao.configure(text=text)
+                self._btn_backup_atualizacao.configure(state='normal')
+            self._tasks.post(done)
+        self._tasks.run(worker)
 
     def _criar_atalho(self):
         if not messagebox.askyesno(
