@@ -38,7 +38,7 @@ não encerra homologação operacional.
 
 ## Validação e evidências
 
-Comando local: `python -m unittest discover -s tests` — 231 testes aprovados no
+Comando local: `python -m unittest discover -s tests` — 232 testes aprovados no
 marco anterior à documentação; `python -m compileall -q backend gui tests main.pyw`
 e `git diff --check` também executados. O total final e os links de Linux/Windows
 serão registrados na PR após o marco integrado.

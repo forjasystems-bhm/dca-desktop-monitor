@@ -233,3 +233,10 @@ class BaselineSchemaValidationTests(unittest.TestCase):
                 with self.assertRaisesRegex(RuntimeError,'assistida'):
                     DataManager(data_dir=root,auto_import_legacy=False)
                 self.assertEqual(dm.arquivo_db.read_bytes(),before)
+    def test_existing_zero_byte_database_is_corruption_not_first_use(self):
+        with TemporaryDirectory() as temp:
+            root=Path(temp);db=root/'portfolio.sqlite3';db.write_bytes(b'')
+            with self.assertRaisesRegex(RuntimeError,'vazio|corrompido'):
+                DataManager(data_dir=root,auto_import_legacy=False)
+            self.assertEqual(db.read_bytes(),b'')
+            self.assertFalse((root/'data-identity.json').exists())

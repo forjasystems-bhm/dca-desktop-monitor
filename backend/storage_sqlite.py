@@ -168,6 +168,8 @@ class ArmazemSQLite:
             raise
 
     def _inicializar(self):
+        if self.arquivo_db.exists() and self.arquivo_db.stat().st_size == 0:
+            raise ErroArmazenamento("SQLite existente vazio/corrompido; use manutenção, não criar carteira substituta.")
         # Schema migrations require a verifiable snapshot BEFORE any ALTER.
         if self.arquivo_db.is_file() and self.arquivo_db.stat().st_size:
             with closing(sqlite3.connect(self.arquivo_db.as_uri() + "?mode=ro", uri=True)) as verify:
