@@ -2,7 +2,7 @@ from datetime import datetime
 from decimal import Decimal
 import unittest
 
-from gui.janela_registro_logica import interpretar_cambio, interpretar_data_operacao
+from backend.entrada_operacao import interpretar_cambio, interpretar_data_operacao
 
 AGORA = datetime(2026, 10, 19, 14, 0, 0)
 
