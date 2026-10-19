@@ -6,6 +6,7 @@ from pathlib import Path
 from tkinter import filedialog, messagebox
 from uuid import uuid4
 import customtkinter as ctk
+from backend.ui_dispatch import UiDispatcher
 
 from config.tema_cripto import (
     BG_SURFACE, BG_CARD, BG_INPUT, BORDER, BTC_ORANGE, CYAN,
@@ -24,6 +25,8 @@ class JanelaPrimeiroUso(ctk.CTkScrollableFrame):
         self._on_change = on_change
         self._on_begin_empty = on_begin_empty
         self._previa = None
+        self._tasks = UiDispatcher(self)
+        self._csv_em_andamento = False
         self._movimento_id = str(uuid4())
         self._movimento_em_envio = False
         self._movimento_confirmado = False
@@ -51,10 +54,11 @@ class JanelaPrimeiroUso(ctk.CTkScrollableFrame):
                 "O CSV fica intacto e recebe cópia verificada."
             ), text_color=TEXT_SECONDARY, wraplength=875, justify="left",
         ).pack(anchor="w", padx=12)
-        ctk.CTkButton(
+        self._btn_escolher_csv = ctk.CTkButton(
             csv, text="Escolher CSV existente", fg_color=BTC_ORANGE,
             text_color=BG_SURFACE, command=self._escolher_csv,
-        ).pack(anchor="w", padx=12, pady=(12, 6))
+        )
+        self._btn_escolher_csv.pack(anchor="w", padx=12, pady=(12, 6))
         self._resumo_csv = ctk.CTkLabel(
             csv, text="Nenhum arquivo escolhido.", text_color=TEXT_SECONDARY,
             wraplength=860, justify="left",
@@ -259,14 +263,46 @@ class JanelaPrimeiroUso(ctk.CTkScrollableFrame):
             self._estado.configure(text=f"Erro de integridade: {exc}", text_color=NEON_RED)
 
     def _escolher_csv(self):
-        filename = filedialog.askopenfilename(
-            title="Selecione o CSV ORIGINAL da instalação antiga",
-            filetypes=[("Arquivo CSV", "*.csv"), ("Todos os arquivos", "*.*")],
-        )
-        if not filename:
+        if self._csv_em_andamento:
             return
+        self._csv_em_andamento = True
+        self._previa = None
+        self._btn_importar.configure(state="disabled")
+        self._btn_escolher_csv.configure(state="disabled")
+        self._resumo_csv.configure(text="Selecione o CSV original.", text_color=CYAN)
         try:
-            self._previa = self._db.prever_csv(filename)
+            filename = filedialog.askopenfilename(
+                parent=self.winfo_toplevel(),
+                title="Selecione o CSV ORIGINAL da instalação antiga",
+                filetypes=[("Arquivo CSV", "*.csv"), ("Todos os arquivos", "*.*")],
+            )
+        except Exception as exc:
+            self._csv_em_andamento = False
+            self._btn_escolher_csv.configure(state="normal")
+            self._resumo_csv.configure(text=f"Não foi possível abrir o seletor: {exc}", text_color=NEON_RED)
+            return
+        if not filename:
+            self._csv_em_andamento = False
+            self._btn_escolher_csv.configure(state="normal")
+            self._resumo_csv.configure(text="Seleção cancelada; nenhum arquivo será importado.")
+            return
+        self._resumo_csv.configure(text="Conferindo CSV; aguarde. O original não será alterado.")
+        def conferir():
+            try:
+                previa = self._db.prever_csv(filename)
+            except Exception as exc:
+                self._tasks.post(lambda error=str(exc): self._concluir_previa_csv(None, error))
+            else:
+                self._tasks.post(lambda: self._concluir_previa_csv(previa))
+        self._tasks.run(conferir)
+
+    def _concluir_previa_csv(self, previa, erro=None):
+        self._csv_em_andamento = False
+        self._btn_escolher_csv.configure(state="normal")
+        try:
+            if erro is not None:
+                raise ValueError(erro)
+            self._previa = previa
             p = self._previa
             self._resumo_csv.configure(
                 text=(f"Arquivo: {p['arquivo']}\n"
@@ -281,7 +317,7 @@ class JanelaPrimeiroUso(ctk.CTkScrollableFrame):
         except Exception as exc:
             self._previa = None
             self._btn_importar.configure(state="disabled")
-            messagebox.showerror("CSV não autorizado", str(exc))
+            self._resumo_csv.configure(text=f"CSV não autorizado: {exc}", text_color=NEON_RED)
 
     def _importar_csv(self):
         p = self._previa
