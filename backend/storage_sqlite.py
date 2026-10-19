@@ -640,6 +640,9 @@ class ArmazemSQLite:
                     "não reordenar histórico financeiro."
                 )
             from backend.custody_ledger import apurar_custodia
+            # The historical cutoff and the full transactional replay must
+            # both respect the declaration date of each external position.
+            apurar_custodia(opens,earlier+[row],ate=dia)
             apurar_custodia(opens,earlier+[row])
             con.execute(
                 "INSERT INTO movimentacoes_custodia "

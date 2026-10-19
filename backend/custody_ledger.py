@@ -35,10 +35,16 @@ def apurar_custodia(saldos_externos, movimentos=(), *, ate: date | None = None):
     """
     lots = defaultdict(lambda: {"quantidade": ZERO, "custo": ZERO})
     ativos_com_custo_incompleto = set()
-    for p in saldos_externos or ():
-        dia = date.fromisoformat(str(p["Data"])[:10])
-        if ate is not None and dia > ate:
-            continue
+    declaracoes = sorted(
+        ((date.fromisoformat(str(p["Data"])[:10]), p)
+         for p in saldos_externos or ()),
+        key=lambda item: item[0],
+    )
+    if ate is not None:
+        declaracoes = [(dia, p) for dia, p in declaracoes if dia <= ate]
+    proxima_declaracao = 0
+
+    def aplicar_declaracao(p):
         key = (str(p["Moeda"]).upper(), str(p["Custodia"]))
         qtd = numero(p["Quantidade"], "Quantidade do saldo")
         lot = lots[key]
@@ -60,6 +66,12 @@ def apurar_custodia(saldos_externos, movimentos=(), *, ate: date | None = None):
         dia = date.fromisoformat(str(m["Data"])[:10])
         if ate is not None and dia > ate:
             continue
+        # Declarations have day precision: they become available on that day,
+        # never before. Keep the existing ordering of movements within a day.
+        while (proxima_declaracao < len(declaracoes)
+               and declaracoes[proxima_declaracao][0] <= dia):
+            aplicar_declaracao(declaracoes[proxima_declaracao][1])
+            proxima_declaracao += 1
         tipo = str(m["Tipo"]).lower()
         coin = str(m["Moeda"]).upper()
         origem = str(m["Origem"])
@@ -112,6 +124,10 @@ def apurar_custodia(saldos_externos, movimentos=(), *, ate: date | None = None):
                 resultado_conhecido = False
             else:
                 realizado += bruto - fee_usdt - custo_venda - custo_fee
+    # Include declarations after the last movement only in the final balance;
+    # their quantities/costs cannot fund or reprice an earlier transaction.
+    for _, p in declaracoes[proxima_declaracao:]:
+        aplicar_declaracao(p)
     resultado = []
     for (coin,local),lot in sorted(lots.items()):
         if lot["quantidade"] <= ZERO:
