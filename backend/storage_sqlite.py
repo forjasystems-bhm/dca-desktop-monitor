@@ -174,6 +174,22 @@ class ArmazemSQLite:
                 version = verify.execute("PRAGMA user_version").fetchone()[0]
             if version > SCHEMA_VERSION:
                 raise ErroArmazenamento("Banco de versão futura incompatível; nenhuma migração executada.")
+            if version == SCHEMA_VERSION:
+                from backend.database_identity import validar_banco_dca
+                validar_banco_dca(self.arquivo_db)
+            else:
+                # Never initialize an arbitrary or damaged existing SQLite as DCA.
+                from backend.database_identity import REQUIRED
+                with closing(sqlite3.connect(self.arquivo_db.as_uri()+"?mode=ro",uri=True)) as verify:
+                    for table, columns in REQUIRED.items():
+                        if table in ("identidade_carteira", "auditoria_operacoes", "versoes_resultados"):
+                            continue
+                        if version < 7 and table not in ("operacoes", "importacoes_legadas"):
+                            continue
+                        required = columns - ({"comando_id"} if version < 7 else set())
+                        actual={r[1] for r in verify.execute("PRAGMA table_info("+table+")")}
+                        if not required <= actual:
+                            raise ErroArmazenamento("Estrutura DCA anterior inválida: "+table)
             if version < SCHEMA_VERSION:
                 from backend.backup_sqlite import criar_backup_sqlite
                 criar_backup_sqlite(

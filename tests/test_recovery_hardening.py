@@ -129,3 +129,34 @@ class IndependentBackupTests(unittest.TestCase):
                 self.assertTrue(dm.salvar_operacao(['2026-01-01 12:00:00','USDT','compra','10','5','10','5']))
             self.assertEqual(len(dm.carregar_operacoes_precisas()),1)
             self.assertIn('disco cheio',dm.ultimo_aviso_backup)
+
+class MigrationAtomicityTests(unittest.TestCase):
+    def test_current_schema_missing_financial_table_is_refused_not_recreated(self):
+        with TemporaryDirectory() as temp:
+            root=Path(temp);dm=DataManager(data_dir=root,auto_import_legacy=False)
+            with closing(sqlite3.connect(dm.arquivo_db)) as conn:conn.execute('DROP TABLE movimentacoes_custodia');conn.commit()
+            with self.assertRaisesRegex(RuntimeError,'Estrutura'):
+                DataManager(data_dir=root,auto_import_legacy=False)
+            with closing(sqlite3.connect(dm.arquivo_db)) as conn:
+                self.assertEqual(conn.execute("SELECT count(*) FROM sqlite_master WHERE name='movimentacoes_custodia'").fetchone()[0],0)
+
+    def test_ddl_and_version_rollback_on_migration_failure(self):
+        from backend.storage_sqlite import ArmazemSQLite
+        from unittest.mock import patch
+        with TemporaryDirectory() as temp:
+            root=Path(temp);dm=DataManager(data_dir=root,auto_import_legacy=False)
+            with closing(sqlite3.connect(dm.arquivo_db)) as conn:
+                conn.execute('DROP TABLE versoes_resultados');conn.execute('PRAGMA user_version=9');conn.commit()
+            original=ArmazemSQLite._conectar
+            class FailingConnection:
+                def __init__(self,conn):self.conn=conn
+                def execute(self,sql,*args):
+                    if 'CREATE TABLE IF NOT EXISTS versoes_resultados' in sql:raise sqlite3.OperationalError('Injected DDL failure')
+                    return self.conn.execute(sql,*args)
+                def __getattr__(self,name):return getattr(self.conn,name)
+            with patch.object(ArmazemSQLite,'_conectar',lambda obj:FailingConnection(original(obj))):
+                with self.assertRaisesRegex(sqlite3.OperationalError,'Injected'):
+                    DataManager(data_dir=root,auto_import_legacy=False)
+            with closing(sqlite3.connect(dm.arquivo_db)) as conn:
+                self.assertEqual(conn.execute('PRAGMA user_version').fetchone()[0],9)
+                self.assertEqual(conn.execute("SELECT count(*) FROM sqlite_master WHERE name='versoes_resultados'").fetchone()[0],0)
