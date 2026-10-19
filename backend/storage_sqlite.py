@@ -53,9 +53,18 @@ def _validar(item: dict, indice: int) -> dict[str, str]:
         if not d[key]:
             raise ErroMigracao(f"Linha {indice}: falta {key}.")
     try:
-        if len(d["Data"]) != 19:
-            raise ValueError("data incompleta")
-        datetime.strptime(d["Data"], "%Y-%m-%d %H:%M:%S")
+        # Historical CSV exports sometimes omit the leading zero in month/day.
+        # Parse precisely those calendar variants, then persist canonical ISO
+        # date text for deterministic ordering. The original CSV bytes and SHA
+        # remain untouched in the documentary backup.
+        if not re.fullmatch(
+            r"[0-9]{4}-[0-9]{1,2}-[0-9]{1,2} [0-9]{2}:[0-9]{2}:[0-9]{2}",
+            d["Data"],
+        ):
+            raise ValueError("formato de data inválido")
+        d["Data"] = datetime.strptime(
+            d["Data"], "%Y-%m-%d %H:%M:%S"
+        ).strftime("%Y-%m-%d %H:%M:%S")
     except ValueError as exc:
         raise ErroMigracao(f"Linha {indice}: data inválida.") from exc
     d["Operacao"] = d["Operacao"].lower()
