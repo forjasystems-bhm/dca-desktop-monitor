@@ -50,6 +50,8 @@ class JanelaAnalisePeriodo(ctk.CTkFrame):
         self._indicadores = {}
         self._busca_historica_ativa = False
         self._ultimo_historico = None
+        self._detalhes_janela = None
+        self._detalhes_tabela = None
         self._construir()
         self.after(150, self.atualizar)
 
@@ -378,7 +380,17 @@ class JanelaAnalisePeriodo(ctk.CTkFrame):
         resultado = self._ultimo_historico
         if resultado is None:
             return
+        # On Windows a plain Toplevel can open behind the dashboard.  Keep one
+        # instance and bring it forward instead of silently creating windows
+        # that the user cannot see.
+        existente = self._detalhes_janela
+        if existente is not None and existente.winfo_exists():
+            existente.deiconify()
+            existente.lift()
+            existente.focus_force()
+            return existente
         janela = ctk.CTkToplevel(self)
+        janela.transient(self.winfo_toplevel())
         janela.title(f"DCA — Ativos em {resultado['data_utc']} (USDT)")
         largura = min(1160, max(760, self.winfo_screenwidth() - 50))
         janela.geometry(f"{largura}x420")
@@ -431,6 +443,18 @@ class JanelaAnalisePeriodo(ctk.CTkFrame):
         sx.grid(row=1, column=0, sticky="ew")
         self._detalhes_janela = janela
         self._detalhes_tabela = table
+        def limpar_referencia(event=None):
+            if event is None or event.widget is janela:
+                self._detalhes_janela = None
+                self._detalhes_tabela = None
+        def fechar_detalhes():
+            limpar_referencia()
+            janela.destroy()
+        janela.protocol("WM_DELETE_WINDOW", fechar_detalhes)
+        janela.bind("<Destroy>", limpar_referencia, add="+")
+        # Run after Tk maps the new window; this is the point at which Windows
+        # can reliably move it above the dashboard.
+        janela.after_idle(lambda: (janela.lift(), janela.focus_force()))
         return janela
 
     def _buscar_cotacoes_historicas(self):

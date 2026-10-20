@@ -18,7 +18,7 @@ from backend.windows_lifecycle import comparar_versoes
 RELEASE_ENDPOINT = (
     "https://api.github.com/repos/tiolusystems/dca-desktop-monitor/releases/latest"
 )
-APP_VERSION = "1.0.0"  # versioned production candidate; GitHub release required
+APP_VERSION = "1.0.1"  # desktop integration; publish only after governed validation
 DEFAULTS = {"minimizar_para_bandeja": False}
 VERSION_PATTERN = re.compile(r"^v?([0-9]+\.[0-9]+\.[0-9]+)$")
 

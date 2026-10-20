@@ -37,8 +37,9 @@ def main():
 
         def drive_picker(filename=None):
             try:
-                window = '.__tk_filedialog'
-                assert root.tk.call('winfo', 'exists', window)
+                # Tk nests the Tcl picker below a non-root -parent.
+                window = str(owner) + '.__tk_filedialog'
+                assert root.tk.call('winfo', 'exists', window), f'Picker absent: {window}'
                 assert str(root.tk.call('wm', 'transient', window)) == str(owner)
                 picker_seen.append(True)
                 # This is precisely the callback that used to open a competing
@@ -56,6 +57,7 @@ def main():
             with patch('gui.janela_caixa.messagebox.showerror', side_effect=AssertionError('Unexpected modal')):
                 root.after(350, drive_picker)
                 first._escolher_csv()
+                assert not errors, errors
                 assert picker_seen and not first._csv_em_andamento
                 assert first._previa is None
                 assert 'Saldo não apurado' in caixa.lbl_saldo.cget('text')

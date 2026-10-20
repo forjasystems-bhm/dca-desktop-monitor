@@ -22,7 +22,7 @@ from config.tema_cripto import (
 
 class JanelaAplicativo(ctk.CTkToplevel):
     def __init__(self, parent, data_manager, *, ao_restaurar=None,
-                 ao_alterar_preferencia=None):
+                 ao_alterar_preferencia=None, ao_instalar=None):
         super().__init__(parent)
         self.transient(parent)
         self._tasks = UiDispatcher(self)
@@ -32,6 +32,7 @@ class JanelaAplicativo(ctk.CTkToplevel):
         self._db=data_manager
         self._on_restore=ao_restaurar
         self._on_pref=ao_alterar_preferencia
+        self._on_install=ao_instalar
         self._manifesto_escolhido=None
         self._atualizacao_encontrada=None
         self._download_verificado=None
@@ -69,16 +70,20 @@ class JanelaAplicativo(ctk.CTkToplevel):
         self._btn_backup_atualizacao=ctk.CTkButton(updates,text='Preparar atualização (backup recuperável)',
             state='disabled',fg_color=BG_INPUT,command=self._preparar_atualizacao)
         self._btn_backup_atualizacao.pack(anchor='w',padx=12,pady=4)
-        ctk.CTkButton(updates,text='Instalar atualização — indisponível nesta versão portátil',
-                      state='disabled',fg_color=BG_INPUT).pack(anchor='w',padx=12,pady=4)
-        self._texto(updates,'Instalação automática e rollback automático ainda não são suportados. '
-                    'A preparação verifica o backup; não troca executáveis nem atalhos.')
+        self._btn_aplicar=ctk.CTkButton(updates,text='Instalar atualização e reabrir',
+                      state='disabled',fg_color=BTC_ORANGE,text_color=BG_SURFACE,
+                      command=self._instalar_atualizacao)
+        self._btn_aplicar.pack(anchor='w',padx=12,pady=4)
+        self._texto(updates,'No Windows, a instalação cria uma pasta para a nova versão, '
+                    'testa um backup e reabre o aplicativo com seus dados. '
+                    'O atalho só muda após a confirmação de abertura. '
+                    'No Linux, a troca da pasta continua manual.')
 
         shortcuts=self._box(wrap,"Atalho da Área de Trabalho")
         self.status_atalho=self._texto(
             shortcuts,
-            "Cria um atalho .lnk apontando para o executável instalado. "
-            "Nenhum atalho é criado automaticamente.",
+            "O Windows cria o atalho na primeira abertura. "
+            "Use este botão para recriá-lo nesta instalação.",
         )
         frozen=getattr(sys,"frozen",False)
         preview=(Path(sys.executable).parent/"DCA-PREVIEW-MODE").is_file()
@@ -108,6 +113,8 @@ class JanelaAplicativo(ctk.CTkToplevel):
             text_color=TEXT_PRIMARY,
         )
         self._switch.pack(anchor="w",padx=12,pady=(9,6))
+        if sys.platform != 'win32':
+            self._switch.configure(state='disabled')
         self._texto(
             second,
             "Desativado por padrão. Na bandeja: Abrir, Atualizar cotações, "
@@ -165,6 +172,7 @@ class JanelaAplicativo(ctk.CTkToplevel):
         self._atualizacao_encontrada = None
         self._download_verificado = None
         self._btn_backup_atualizacao.configure(state='disabled')
+        self._btn_aplicar.configure(state='disabled')
         self._btn_instalar.configure(state="disabled")
         self.status_atualizacao.configure(text="Verificando releases oficiais...")
         def tarefa():
@@ -220,11 +228,13 @@ class JanelaAplicativo(ctk.CTkToplevel):
                 else:
                     self._download_verificado=(info,result['arquivo'])
                     self._btn_backup_atualizacao.configure(state='normal')
+                    if sys.platform == 'win32' and getattr(sys,'frozen',False) and self._on_install:
+                        self._btn_aplicar.configure(state='normal')
                     self.status_atualizacao.configure(
                         text="Download e SHA-256 verificados em "
                         + result["arquivo"] +
-                        ". Feche o programa e faça backup antes da instalação "
-                        "manual. A versão atual e seu SQLite continuam intactos.")
+                        ". Agora você pode instalar e reabrir no Windows, "
+                        "ou preparar um backup para troca manual. Seus dados continuam intactos.")
             self._tasks.post(completed)
         self._tasks.run(task)
 
@@ -250,6 +260,43 @@ class JanelaAplicativo(ctk.CTkToplevel):
             def done():
                 self.status_atualizacao.configure(text=text)
                 self._btn_backup_atualizacao.configure(state='normal')
+            self._tasks.post(done)
+        self._tasks.run(worker)
+
+    def _instalar_atualizacao(self):
+        if not self._download_verificado or not self._on_install:
+            return
+        if not messagebox.askyesno('Instalar atualização',
+                'Fechar o DCA, criar e testar um backup da carteira e abrir a nova versão? '
+                'Se a preparação falhar, os arquivos serão preservados. '
+                'Não há restauração automática do banco.', parent=self):
+            return
+        info, archive = self._download_verificado
+        self._btn_aplicar.configure(state='disabled')
+        self._btn_instalar.configure(state='disabled')
+        self.status_atualizacao.configure(text='Verificando e preparando a nova versão...')
+        def worker():
+            try:
+                from backend.update_install import preparar_instalacao
+                result = preparar_instalacao(info, archive, self._db.arquivo_db)
+                error = None
+            except Exception as exc:
+                result, error = None, str(exc)
+            def done():
+                if not self.winfo_exists():
+                    return
+                if error:
+                    self.status_atualizacao.configure(text='Instalação recusada: ' + error)
+                    self._btn_aplicar.configure(state='normal')
+                    return
+                try:
+                    from backend.update_install import iniciar_instalacao
+                    iniciar_instalacao(result['acao'])
+                except Exception as exc:
+                    self.status_atualizacao.configure(text='Auxiliar não iniciou: ' + str(exc))
+                    self._btn_aplicar.configure(state='normal')
+                    return
+                self._on_install()
             self._tasks.post(done)
         self._tasks.run(worker)
 
