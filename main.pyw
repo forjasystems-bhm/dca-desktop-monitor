@@ -78,7 +78,7 @@ class PortfolioDCA:
             ao_abrir=lambda: self._agendar_ui(self._restaurar_da_bandeja),
             ao_atualizar=lambda: self._agendar_ui(self.atualizar_todas_as_analises),
             ao_sair=lambda: self._agendar_ui(lambda: self._on_closing(force=True)),
-            icone=Path(__file__).resolve().parent/"img"/"favicon.png",
+            icone=Path(__file__).resolve().parent/"img"/"dca-monitor.png",
         )
 
         self.janela = janela
@@ -92,6 +92,8 @@ class PortfolioDCA:
         self._criar_interface()
         self._preencher_dados_iniciais()
         self._iniciar_atualizacoes_automaticas()
+        # Never interrupts startup if the Desktop is unavailable or read-only.
+        self.janela.after(1800, self._preparar_primeiro_atalho)
         if (not self.data_manager.carregar_operacoes_precisas()
                 and not self.data_manager.carregar_posicoes_iniciais()
                 and not self.data_manager.carregar_posicoes_externas()):
@@ -144,11 +146,23 @@ class PortfolioDCA:
             self.janela, self.data_manager,
             ao_restaurar=self._restaurar_fora_app,
             ao_alterar_preferencia=self._alterar_preferencias,
+            ao_instalar=lambda: self._on_closing(force=True),
         )
         self._janela_aplicativo.lift()
 
     def _alterar_preferencias(self, preferencias):
         self._preferences = dict(preferencias)
+
+    def _preparar_primeiro_atalho(self):
+        if self._closing or '--update-ready' in sys.argv:
+            return
+        def task():
+            try:
+                from config.install import primeiro_atalho
+                primeiro_atalho(self.data_manager._store.diretorio)
+            except Exception as exc:
+                logger.warning('Atalho automático pendente: %s', exc)
+        self._ui_tasks.run(task)
 
     def _restaurar_da_bandeja(self):
         if self._closing:
@@ -201,8 +215,8 @@ class PortfolioDCA:
         ctk.set_appearance_mode("dark")
 
         base_dir    = os.path.dirname(os.path.abspath(__file__))
-        caminho_ico = os.path.join(base_dir, "img", "favicon.ico")
-        caminho_png = os.path.join(base_dir, "img", "favicon.png")
+        caminho_ico = os.path.join(base_dir, "img", "dca-monitor.ico")
+        caminho_png = os.path.join(base_dir, "img", "dca-monitor.png")
 
         try:
             if platform.system() == "Windows" and os.path.exists(caminho_ico):
@@ -555,6 +569,22 @@ class PortfolioDCA:
 
 
 if __name__ == "__main__":
+    if len(sys.argv) == 3 and sys.argv[1] == '--maintenance-update':
+        from backend.update_install import executar_instalacao
+        try:
+            executar_instalacao(Path(sys.argv[2]))
+        except Exception as exc:
+            from tkinter import Tk, messagebox
+            notice = Tk()
+            notice.withdraw()
+            messagebox.showerror('Atualização não concluída',
+                str(exc) + '\nAs pastas e os dados foram preservados. '
+                'Consulte o recibo em ' + sys.argv[2] +
+                '\nNão abra uma versão antiga sobre um banco migrado. '
+                'Use recuperação em pasta separada se necessário.', parent=notice)
+            notice.destroy()
+            sys.exit(1)
+        sys.exit(0)
     if len(sys.argv) == 4 and sys.argv[1] == "--maintenance-restore":
         from backend.restore_command import executar_manutencao_restauracao
         status = executar_manutencao_restauracao(
@@ -592,6 +622,10 @@ if __name__ == "__main__":
             if len(sys.argv)==3 and sys.argv[1]=='--distribution-self-test':
                 from backend.distribution_probe import schedule_probe
                 schedule_probe(root_principal,root_principal.app,sys.argv[2])
+            if len(sys.argv)==4 and sys.argv[1]=='--update-ready':
+                from backend.update_install import confirmar_abertura
+                confirmar_abertura(root_principal,root_principal.app,
+                                   Path(sys.argv[2]),sys.argv[3])
 
         JanelaSplash(root_principal, criar_app_callback=criar_app)
         root_principal.mainloop()

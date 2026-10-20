@@ -235,8 +235,8 @@ class JanelaSplash:
 
     def _aplicar_icone(self):
         base_dir    = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        caminho_ico = os.path.join(base_dir, "img", "favicon.ico")
-        caminho_png = os.path.join(base_dir, "img", "favicon.png")
+        caminho_ico = os.path.join(base_dir, "img", "dca-monitor.ico")
+        caminho_png = os.path.join(base_dir, "img", "dca-monitor.png")
         try:
             if platform.system() == "Windows" and os.path.exists(caminho_ico):
                 self.splash.iconbitmap(caminho_ico)
